@@ -1,0 +1,25 @@
+# Copy this file to `.dev.vars` (git-ignored) for local development.
+
+NEXTJS_ENV=development
+
+# The email allowed to register the first owner account.
+# Defaults to admin@admin.com (the local seed user) when unset.
+OWNER_EMAIL=admin@admin.com
+
+# A long random secret used to sign Better Auth sessions.
+# Generate one with: openssl rand -base64 32
+BETTER_AUTH_SECRET=change-me-in-production
+
+# Required in production (e.g. https://your-app.workers.dev).
+# Leave unset locally — it defaults to the request origin.
+# BETTER_AUTH_URL=
+
+# Optional: enable Google sign-in when both are present.
+# GOOGLE_CLIENT_ID=
+# GOOGLE_CLIENT_SECRET=
+
+# Optional: comma-separated allowed Origins for the MCP endpoint (/api/mcp),
+# for DNS-rebinding protection. Leave unset to allow any origin (the MCP still
+# requires a personal access token). Set in production if browser-based MCP
+# clients will connect, e.g. https://claude.ai
+# MCP_ALLOWED_ORIGINS=

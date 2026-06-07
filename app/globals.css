@@ -1,0 +1,820 @@
+@import "tailwindcss";
+
+/*
+ * Theme: Midnight Command Center (Linear-inspired)
+ * Mapped onto existing semantic var names so existing markup
+ * (`text-foreground`, `bg-surface`, `border-border`, etc.) flips to dark.
+ */
+
+:root {
+  /* Linear palette */
+  --pitch-black: #08090a;
+  --graphite: #0f1011;
+  --deep-slate: #161718;
+  --charcoal-grey: #23252a;
+  --muted-ash: #323334;
+  --gunmetal: #383b3f;
+  --porcelain: #f7f8f8;
+  --light-steel: #d0d6e0;
+  --storm-cloud: #8a8f98;
+  --fog-grey: #62666d;
+  --neon-lime: #e4f222;
+  --neon-lime-strong: #f0ff3a;
+  --neon-lime-soft: rgba(228, 242, 34, 0.1);
+  --aether-blue: #5e6ad2;
+  --emerald: #27a644;
+  --amber: #f59e0b;
+  --warning-red: #eb5757;
+
+  /* Brand accent. --brand is the single configurable base (overridden at runtime
+     by an inline --brand on <html> from system settings); every other accent
+     shade — and the sidebar palette below — is derived from it via color-mix, so
+     one hex re-tints the whole UI in both themes. Defaults reproduce emerald. */
+  --brand: #10b981;
+  --brand-strong: color-mix(in srgb, var(--brand) 80%, #ffffff);
+  --brand-soft: color-mix(in srgb, var(--brand) 12%, transparent);
+
+  /* Semantic mapping (existing token names — preserved for cascade) */
+  --background: var(--pitch-black);
+  --foreground: var(--porcelain);
+  --surface: var(--graphite);
+  --surface-strong: var(--deep-slate);
+  --surface-subtle: var(--charcoal-grey);
+  --muted: var(--storm-cloud);
+  --muted-strong: var(--light-steel);
+  --border: var(--charcoal-grey);
+  --border-strong: var(--muted-ash);
+  --accent: var(--brand);
+  --accent-strong: var(--brand-strong);
+  --accent-soft: var(--brand-soft);
+  --accent-on: #ffffff;
+  --danger: var(--warning-red);
+  --danger-soft: rgba(235, 87, 87, 0.12);
+  --ring: color-mix(in srgb, var(--brand) 45%, transparent);
+
+  /* Type scale (Linear) */
+  --tracking-tight: -0.011em;
+  --tracking-display: -0.022em;
+
+  /* Elevation — overridable per-theme */
+  --shadow-card: rgba(0, 0, 0, 0.4) 0px 2px 4px 0px;
+  --shadow-card-ring: rgba(0, 0, 0, 0.2) 0px 0px 0px 1px;
+  --scrollbar-thumb: var(--gunmetal);
+  --scrollbar-thumb-hover: var(--muted-ash);
+  --modal-backdrop: rgba(0, 0, 0, 0.6);
+  --badge-bg: var(--gunmetal);
+  --badge-fg: var(--muted);
+
+  /* Header band background. Overridable per-section via inline style — e.g.
+     a project page sets --ui-header-bg to its custom color. */
+  --ui-header-bg: color-mix(in srgb, var(--brand) 42%, #021410);
+}
+
+/*
+ * Light theme — "Daylight". Activated by [data-theme="light"] on <html>.
+ * Overrides the same semantic tokens so existing markup flips wholesale.
+ */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --background: #ffffff;
+  --foreground: #08090a;
+  --surface: #fafafa;
+  --surface-strong: #f1f2f4;
+  --surface-subtle: #f4f5f6;
+  --muted: #62666d;
+  --muted-strong: #383b3f;
+  --border: #e6e7e8;
+  --border-strong: #d0d4d8;
+  --accent: var(--brand);
+  --accent-strong: var(--brand-strong);
+  --accent-soft: var(--brand-soft);
+  --accent-on: #ffffff;
+  --danger: var(--warning-red);
+  --danger-soft: rgba(235, 87, 87, 0.1);
+  --ring: color-mix(in srgb, var(--brand) 45%, transparent);
+
+  --shadow-card: rgba(15, 16, 17, 0.06) 0px 1px 2px 0px;
+  --shadow-card-ring: rgba(15, 16, 17, 0.08) 0px 0px 0px 1px;
+  --scrollbar-thumb: #d0d4d8;
+  --scrollbar-thumb-hover: #b9bdc2;
+  --modal-backdrop: rgba(15, 16, 17, 0.45);
+  --badge-bg: #ebedef;
+  --badge-fg: #4a4e54;
+
+  --ui-header-bg: var(--brand);
+}
+
+/*
+ * Sidebar palette — brand-emerald tinted in both themes.
+ * Overrides the semantic tokens within the sidebar scope so descendants
+ * (active row pill, project rail, badges, hover states) flip automatically.
+ * Accent (--brand) is inherited unchanged so brand callouts stay visible.
+ */
+.app-sidebar {
+  --background: color-mix(in srgb, var(--brand) 28%, #07090c);
+  --surface: color-mix(in srgb, var(--brand) 38%, #090b0e);
+  --surface-strong: color-mix(in srgb, var(--brand) 52%, #0b0e12);
+  --surface-subtle: color-mix(in srgb, var(--brand) 30%, #080a0d);
+  --foreground: color-mix(in srgb, var(--brand) 10%, #ffffff);
+  --muted: color-mix(in srgb, var(--brand) 30%, #9aa0a8);
+  --muted-strong: color-mix(in srgb, var(--brand) 22%, #e2e6ec);
+  --border: color-mix(in srgb, var(--brand) 42%, #0f1217);
+  --border-strong: color-mix(in srgb, var(--brand) 56%, #161b22);
+  --badge-bg: color-mix(in srgb, var(--brand) 40%, #0b0e12);
+  --badge-fg: color-mix(in srgb, var(--brand) 18%, #e2e6ec);
+  --accent-soft: color-mix(in srgb, var(--brand) 30%, transparent);
+}
+
+:root[data-theme="light"] .app-sidebar {
+  --background: color-mix(in srgb, var(--brand) 16%, #ffffff);
+  --surface: color-mix(in srgb, var(--brand) 6%, #ffffff);
+  --surface-strong: color-mix(in srgb, var(--brand) 42%, #ffffff);
+  --surface-subtle: color-mix(in srgb, var(--brand) 24%, #ffffff);
+  --foreground: color-mix(in srgb, var(--brand) 42%, #04130d);
+  --muted: color-mix(in srgb, var(--brand) 40%, #5b6b64);
+  --muted-strong: color-mix(in srgb, var(--brand) 50%, #0c2f24);
+  --border: color-mix(in srgb, var(--brand) 36%, #ffffff);
+  --border-strong: color-mix(in srgb, var(--brand) 52%, #ffffff);
+  --badge-bg: color-mix(in srgb, var(--brand) 22%, #ffffff);
+  --badge-fg: color-mix(in srgb, var(--brand) 58%, #04130d);
+  --accent-soft: color-mix(in srgb, var(--brand) 22%, transparent);
+}
+
+/* Brand logo — show the variant that matches the active theme. */
+.logo-dark { display: inline-block; }
+.logo-light { display: none; }
+:root[data-theme="light"] .logo-dark { display: none; }
+:root[data-theme="light"] .logo-light { display: inline-block; }
+
+/*
+ * Desktop sidebar collapse (icon rail). Driven by the `data-sidebar-collapsed`
+ * attribute on <html> (set pre-paint by the boot script in app/layout.tsx, so
+ * the rail width has no flash). Only applies at md+ — on mobile the sidebar is
+ * an off-canvas drawer instead. The DOM always renders everything; CSS hides
+ * the collapsible chrome so there's no hydration mismatch.
+ */
+/* Rail spacer is inert except in the collapsed desktop rail. */
+.sidebar-rail-spacer {
+  display: none;
+}
+
+/* Square 1:1 brand mark — only shown in the collapsed desktop rail (the full
+   wordmark is hidden there). */
+.sidebar-rail-mark {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .app-sidebar {
+    transition: width 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  :root[data-sidebar-collapsed="true"] .app-sidebar {
+    width: 4rem;
+  }
+  /* Hide labels, title, project list, shortcuts, etc. in the rail. */
+  :root[data-sidebar-collapsed="true"] .app-sidebar .sidebar-collapsible {
+    display: none !important;
+  }
+  /* Center icon-only nav rows and drop the label gap. */
+  :root[data-sidebar-collapsed="true"] .app-sidebar .sidebar-navlink {
+    justify-content: center;
+    gap: 0;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  /* Stack the header vertically in the rail: brand mark on top, controls below. */
+  :root[data-sidebar-collapsed="true"] .app-sidebar .sidebar-rail-center {
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+  /* Reveal the square brand mark in the rail. */
+  :root[data-sidebar-collapsed="true"] .app-sidebar .sidebar-rail-mark {
+    display: inline-flex;
+  }
+  /* Stack the header controls (collapse toggle over bell) to fit the rail. */
+  :root[data-sidebar-collapsed="true"] .app-sidebar .sidebar-rail-stack {
+    flex-direction: column;
+  }
+  /* Push the footer to the bottom of the rail. */
+  :root[data-sidebar-collapsed="true"] .app-sidebar .sidebar-rail-spacer {
+    display: block;
+    flex: 1 1 0%;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-strong: var(--surface-strong);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-muted: var(--muted);
+  --color-muted-strong: var(--muted-strong);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-on: var(--accent-on);
+  --color-danger: var(--danger);
+  --color-aether-blue: var(--aether-blue);
+  --color-brand: var(--brand);
+  --color-emerald: var(--emerald);
+  --color-amber: var(--amber);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-plex-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+html {
+  color-scheme: dark;
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, sans-serif;
+  font-feature-settings: "cv01", "ss03";
+  letter-spacing: var(--tracking-tight);
+  isolation: isolate;
+  text-rendering: optimizeLegibility;
+}
+
+@layer base {
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+}
+
+button,
+input,
+textarea,
+select,
+a {
+  transition:
+    border-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    color 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@layer base {
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+}
+
+button:active {
+  transform: scale(0.99);
+}
+
+button,
+[role="button"],
+a[href],
+label[for],
+select,
+summary,
+input[type="checkbox"],
+input[type="radio"],
+input[type="submit"],
+input[type="reset"],
+input[type="color"] {
+  cursor: pointer;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"],
+[aria-disabled="true"],
+input:disabled,
+select:disabled {
+  cursor: not-allowed;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--foreground);
+}
+
+:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--scrollbar-thumb);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
+/* Surfaces */
+.surface-shadow {
+  box-shadow:
+    var(--shadow-card),
+    var(--shadow-card-ring);
+}
+
+.ui-panel {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 6px;
+  box-shadow: var(--shadow-card);
+}
+
+/*
+ * Page header banner — brand-blue background, white text, inverted buttons.
+ * Stack with .ui-panel: `<section className="ui-panel ui-header ...">`.
+ * Light mode = brand emerald; dark mode = deep emerald.
+ */
+.ui-header {
+  background: var(--ui-header-bg);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* Force descendant text/labels to read on the band. Tokens defined inside
+   the scope cascade to anything using text-foreground / text-muted. */
+.ui-header {
+  --foreground: #ffffff;
+  --muted: rgba(255, 255, 255, 0.72);
+  --muted-strong: rgba(255, 255, 255, 0.92);
+  --border: rgba(255, 255, 255, 0.18);
+  --border-strong: rgba(255, 255, 255, 0.32);
+  --surface: rgba(255, 255, 255, 0.12);
+  --surface-strong: rgba(255, 255, 255, 0.2);
+}
+
+/* Inverted buttons inside the header band — text picks up the band color
+   so white-on-color buttons read in any project theme. */
+.ui-header .ui-button-primary {
+  background: #ffffff;
+  color: var(--ui-header-bg);
+  border-color: rgba(255, 255, 255, 0.6);
+}
+.ui-header .ui-button-primary:hover {
+  background: #f0f5ff;
+  color: var(--ui-header-bg);
+}
+.ui-header .ui-button-secondary {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.32);
+}
+.ui-header .ui-button-secondary:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+.ui-header .ui-button-ghost {
+  color: rgba(255, 255, 255, 0.85);
+}
+.ui-header .ui-button-ghost:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.ui-panel-soft {
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+  border-radius: 6px;
+}
+
+.ui-panel-subtle {
+  border: 1px solid var(--border);
+  background: var(--background);
+  border-radius: 6px;
+}
+
+.ui-panel-danger {
+  border: 1px solid rgba(235, 87, 87, 0.24);
+  background: var(--danger-soft);
+  border-radius: 6px;
+}
+
+/* Rich-text content (TipTap editor + renderer). Keep typography tight so it
+   matches the surrounding 13px UI density rather than a long-form prose feel. */
+.ui-prose {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--foreground);
+}
+.ui-prose p {
+  margin: 0;
+}
+.ui-prose p + p,
+.ui-prose p + ul,
+.ui-prose p + ol,
+.ui-prose p + blockquote,
+.ui-prose ul + p,
+.ui-prose ol + p,
+.ui-prose blockquote + p,
+.ui-prose pre + p,
+.ui-prose h2 + p,
+.ui-prose h3 + p,
+.ui-prose hr + p {
+  margin-top: 0.75rem;
+}
+.ui-prose h2 {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.022em;
+  margin: 1.25rem 0 0.5rem;
+  color: var(--foreground);
+}
+.ui-prose h3 {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.011em;
+  margin: 1rem 0 0.5rem;
+  color: var(--foreground);
+}
+.ui-prose ul,
+.ui-prose ol {
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
+}
+.ui-prose ul {
+  list-style: disc;
+}
+.ui-prose ol {
+  list-style: decimal;
+}
+.ui-prose li > p {
+  margin: 0;
+}
+.ui-prose blockquote {
+  margin: 0.75rem 0;
+  padding: 0.25rem 0.75rem;
+  border-left: 2px solid var(--border-strong);
+  color: var(--muted-strong);
+}
+.ui-prose code {
+  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+  font-size: 12px;
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.ui-prose pre {
+  margin: 0.75rem 0;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+}
+.ui-prose pre code {
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+}
+.ui-prose a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ui-prose hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 1rem 0;
+}
+.ui-prose img {
+  max-width: 100%;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  margin: 0.5rem 0;
+}
+.ui-prose-table,
+.ui-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+  font-size: 12px;
+}
+.ui-prose-table th,
+.ui-prose-table td,
+.ui-prose th,
+.ui-prose td {
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+}
+.ui-prose-table th,
+.ui-prose th {
+  background: var(--surface);
+  font-weight: 600;
+}
+.ui-prose .is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--muted);
+  pointer-events: none;
+  height: 0;
+}
+.ui-prose:focus-within .ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Buttons */
+.ui-button-primary,
+.ui-button-secondary,
+.ui-button-ghost,
+.ui-button-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 36px;
+  border-radius: 6px;
+  padding: 0 14px;
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 510;
+  line-height: 1;
+  letter-spacing: -0.011em;
+}
+
+.ui-button-primary {
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: var(--accent-on);
+}
+
+.ui-button-primary:hover {
+  background: var(--accent-strong);
+}
+
+.ui-button-secondary {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--foreground);
+}
+
+.ui-button-secondary:hover,
+.ui-button-ghost:hover {
+  background: var(--surface-strong);
+  border-color: var(--border-strong);
+}
+
+.ui-button-ghost {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.ui-button-ghost:hover {
+  color: var(--foreground);
+}
+
+.ui-button-danger {
+  border: 1px solid rgba(235, 87, 87, 0.28);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.ui-button-danger:hover {
+  background: rgba(235, 87, 87, 0.18);
+}
+
+/* Inputs */
+.ui-input,
+.ui-textarea,
+.ui-select {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  border-radius: 6px;
+  outline: none;
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  letter-spacing: -0.011em;
+}
+
+.ui-input,
+.ui-select {
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+.ui-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23808080' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px 12px;
+}
+
+.ui-select::-ms-expand {
+  display: none;
+}
+
+.ui-textarea {
+  min-height: 110px;
+  padding: 10px 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.ui-input::placeholder,
+.ui-textarea::placeholder {
+  color: var(--muted);
+}
+
+.ui-input:hover,
+.ui-textarea:hover,
+.ui-select:hover {
+  border-color: var(--border-strong);
+}
+
+.ui-input:focus,
+.ui-textarea:focus,
+.ui-select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* Badge / Kbd */
+.ui-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 22px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: var(--badge-bg);
+  padding: 0 6px;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--badge-fg);
+}
+
+.ui-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+  padding: 0 6px;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+/* Dividers / Skeletons */
+.ui-divider {
+  border-top: 1px solid var(--border);
+}
+
+.ui-skeleton {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.ui-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.05) 50%,
+    transparent 100%
+  );
+  animation: skeleton-shimmer 1.4s linear infinite;
+}
+
+/* Modals */
+.ui-modal-backdrop {
+  background: var(--modal-backdrop);
+  animation: modal-backdrop-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ui-modal-panel {
+  animation: modal-panel-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modal-backdrop-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.99);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.85;
+    transform: scale(1.08);
+  }
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  transform-origin: center;
+}
+
+@keyframes breathe-edge {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.animate-breathe {
+  animation: breathe-edge 2.4s ease-in-out infinite;
+}
+
+@keyframes column-doing-pulse-frames {
+  0%,
+  100% {
+    border-color: color-mix(in srgb, var(--aether-blue) 40%, transparent);
+  }
+
+  50% {
+    border-color: color-mix(in srgb, var(--aether-blue) 70%, transparent);
+  }
+}
+
+.column-doing-pulse {
+  animation: column-doing-pulse-frames 2.6s ease-in-out infinite;
+}

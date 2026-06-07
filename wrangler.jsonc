@@ -1,0 +1,36 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "main": ".open-next/worker.js",
+  "name": "seeder",
+  "compatibility_date": "2026-04-30",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "observability": {
+    "enabled": true
+  },
+  // App config is provided at runtime, never committed here:
+  //   - locally via `.dev.vars` (copy `.dev.vars.example`)
+  //   - in production via Worker vars/secrets (e.g. `wrangler secret put ...`)
+  // Required: OWNER_EMAIL, BETTER_AUTH_SECRET. BETTER_AUTH_URL is required in
+  // production; locally it defaults to the request origin when unset.
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [
+    {
+      "binding": "PM_DB",
+      "database_name": "seeder",
+      "database_id": "<your-d1-database-id>",
+      "preview_database_id": "<your-d1-database-id>",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "UPLOADS",
+      "bucket_name": "seeder-uploads",
+      "preview_bucket_name": "seeder-uploads"
+    }
+  ]
+}

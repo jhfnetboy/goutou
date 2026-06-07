@@ -1,0 +1,260 @@
+// Shared mutation helpers for the workspace service layer. Plain module (NO
+// "use server") — imported by BOTH the web route handler (app/api/workspace)
+// and the MCP server. Moved verbatim from app/api/workspace/route.ts so web
+// behavior is unchanged; the route and MCP now share one implementation.
+import { and, desc, eq, inArray, max } from "drizzle-orm";
+import { z } from "zod";
+
+import type { Viewer } from "@/lib/auth-server";
+import { canAccessProject } from "@/lib/authz";
+import { getDb } from "@/lib/db";
+import {
+  clientRequests,
+  projectMembers,
+  projects,
+  taskCategories,
+  taskChecklistItems,
+  tasks,
+  user,
+  type TaskStatus,
+} from "@/lib/db/schema";
+
+/**
+ * D1/SQLite reports a unique-index violation as an Error whose message contains
+ * "UNIQUE constraint failed". Code numbers are allocated MAX+1 in a separate
+ * statement from the insert, and the web route and MCP server can create rows
+ * concurrently, so a colliding insert against UNIQUE(project_id, code_number)
+ * is retried (recomputing the number) rather than surfaced to the caller.
+ */
+export function isUniqueConstraintError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /UNIQUE constraint failed/i.test(message);
+}
+
+/** Optional trimmed string: "" and missing both collapse to undefined. */
+export const optionalText = z
+  .string()
+  .trim()
+  .transform((value) => (value.length ? value : undefined))
+  .optional()
+  .or(z.literal("").transform(() => undefined));
+
+/** Map user ids → display names, for assignee before→after diffs. */
+export async function userNameMap(
+  ids: Array<string | null | undefined>,
+): Promise<Map<string, string>> {
+  const unique = [...new Set(ids.filter((id): id is string => Boolean(id)))];
+  if (unique.length === 0) return new Map();
+  const db = getDb();
+  const rows = await db
+    .select({ id: user.id, name: user.name })
+    .from(user)
+    .where(inArray(user.id, unique));
+  return new Map(rows.map((row) => [row.id, row.name]));
+}
+
+/** Short single-line preview of a checklist item's content for the log detail. */
+export function checklistExcerpt(content: string): string {
+  const text = content.trim();
+  return text.length <= 80 ? text : `${text.slice(0, 77).trimEnd()}…`;
+}
+
+export function parseDate(value: string | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed;
+}
+
+/**
+ * Like parseDate, but THROWS on a non-empty unparseable value instead of
+ * silently coercing it to null. Used by the write services so an MCP/AI client
+ * that sends a malformed date gets an actionable tool error rather than having
+ * the due date quietly dropped while the call reports success.
+ */
+export function resolveDueDate(value: string | undefined): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(
+      `Invalid due date "${value}". Use an ISO-8601 date such as 2026-06-04.`,
+    );
+  }
+  return parsed;
+}
+
+export async function resolveCategory(
+  categoryId: string | undefined,
+  projectId: string,
+) {
+  if (!categoryId) {
+    return { categoryId: null, categoryName: null, categoryColor: null };
+  }
+  const db = getDb();
+  const [row] = await db
+    .select({
+      id: taskCategories.id,
+      name: taskCategories.name,
+      color: taskCategories.color,
+      projectId: taskCategories.projectId,
+    })
+    .from(taskCategories)
+    .where(eq(taskCategories.id, categoryId))
+    .limit(1);
+  if (!row || row.projectId !== projectId) {
+    return { categoryId: null, categoryName: null, categoryColor: null };
+  }
+  return { categoryId: row.id, categoryName: row.name, categoryColor: row.color };
+}
+
+export async function assertProjectAccess(viewer: Viewer, projectId: string) {
+  const db = getDb();
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+
+  if (!project) {
+    throw new Error("Project not found.");
+  }
+  if (!(await canAccessProject(viewer, projectId))) {
+    throw new Error("Project not found.");
+  }
+
+  return project;
+}
+
+export async function resolveAssignee(
+  candidate: string | undefined,
+  projectId: string,
+): Promise<string | null> {
+  if (!candidate) return null;
+
+  const db = getDb();
+  const [project] = await db
+    .select({ ownerId: projects.ownerId })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+  if (!project) throw new Error("Project not found.");
+  if (project.ownerId === candidate) return candidate;
+
+  const [member] = await db
+    .select({ id: projectMembers.id })
+    .from(projectMembers)
+    .where(
+      and(
+        eq(projectMembers.projectId, projectId),
+        eq(projectMembers.userId, candidate),
+      ),
+    )
+    .limit(1);
+  if (!member) throw new Error("Assignee is not a member of this project.");
+  return candidate;
+}
+
+export async function assertTaskInProject(taskId: string, projectId: string) {
+  const db = getDb();
+  const [task] = await db
+    .select()
+    .from(tasks)
+    .where(and(eq(tasks.id, taskId), eq(tasks.projectId, projectId)))
+    .limit(1);
+
+  if (!task) {
+    throw new Error("Task not found.");
+  }
+
+  return task;
+}
+
+export async function getNextTaskSortOrder(
+  projectId: string,
+  status: TaskStatus,
+) {
+  const db = getDb();
+  const [latest] = await db
+    .select({
+      sortOrder: tasks.sortOrder,
+    })
+    .from(tasks)
+    .where(and(eq(tasks.projectId, projectId), eq(tasks.status, status)))
+    .orderBy(desc(tasks.sortOrder))
+    .limit(1);
+
+  return (latest?.sortOrder ?? -1) + 1;
+}
+
+export async function nextTaskCodeNumber(projectId: string): Promise<number> {
+  const db = getDb();
+  const [row] = await db
+    .select({ value: max(tasks.codeNumber) })
+    .from(tasks)
+    .where(eq(tasks.projectId, projectId));
+  return (row?.value ?? 0) + 1;
+}
+
+export async function nextRequestCodeNumber(
+  projectId: string,
+): Promise<number> {
+  const db = getDb();
+  const [row] = await db
+    .select({ value: max(clientRequests.codeNumber) })
+    .from(clientRequests)
+    .where(eq(clientRequests.projectId, projectId));
+  return (row?.value ?? 0) + 1;
+}
+
+export async function getProjectSlug(projectId: string): Promise<string | null> {
+  const db = getDb();
+  const [row] = await db
+    .select({ slug: projects.slug })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+  return row?.slug ?? null;
+}
+
+export async function getNextChecklistSortOrder(taskId: string) {
+  const db = getDb();
+  const [latest] = await db
+    .select({
+      sortOrder: taskChecklistItems.sortOrder,
+    })
+    .from(taskChecklistItems)
+    .where(eq(taskChecklistItems.taskId, taskId))
+    .orderBy(desc(taskChecklistItems.sortOrder))
+    .limit(1);
+
+  return (latest?.sortOrder ?? -1) + 1;
+}
+
+export async function touchProject(projectId: string, updatedAt = new Date()) {
+  const db = getDb();
+
+  await db
+    .update(projects)
+    .set({
+      updatedAt,
+    })
+    .where(eq(projects.id, projectId));
+}
+
+export async function touchTask(taskId: string, updatedAt = new Date()) {
+  const db = getDb();
+
+  await db
+    .update(tasks)
+    .set({
+      updatedAt,
+    })
+    .where(eq(tasks.id, taskId));
+}
