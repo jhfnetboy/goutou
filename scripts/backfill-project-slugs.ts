@@ -1,38 +1,18 @@
 // Backfill slug for every project that doesn't have one yet.
 //
-// Usage:  bun run db:slugs:local
+// Usage:  npm run db:slugs:local   (local Miniflare D1)
+//         npm run db:slugs:node    (node-mode SQLite file at SQLITE_DB_PATH)
 //
 // Derives slug from the project name (initials for multi-word, first chars
 // for single-word) and disambiguates collisions with a numeric suffix.
 // Idempotent — projects with an existing slug are skipped.
 
-import { execFileSync } from "node:child_process";
-
 import { deriveSlug, SLUG_MAX_LENGTH } from "../lib/codes";
+import { execSql, queryRows } from "./seed-db";
 
 const sqlEscape = (value: string) => value.replace(/'/g, "''");
 
 type Row = { id: string; name: string };
-
-function runD1Query(query: string): unknown[] {
-  const stdout = execFileSync(
-    "npx",
-    [
-      "wrangler",
-      "d1",
-      "execute",
-      "PM_DB",
-      "--local",
-      "--json",
-      `--command=${query}`,
-    ],
-    { encoding: "utf8" },
-  );
-
-  const parsed = JSON.parse(stdout);
-  const result = Array.isArray(parsed) ? parsed[0] : parsed;
-  return result?.results ?? [];
-}
 
 function disambiguate(base: string, taken: Set<string>): string {
   if (!taken.has(base)) return base;
@@ -51,20 +31,19 @@ function disambiguate(base: string, taken: Set<string>): string {
 }
 
 async function main() {
-  const projects = runD1Query(
+  const projects = (await queryRows(
     "SELECT id, name FROM projects WHERE slug IS NULL ORDER BY created_at;",
-  ) as Row[];
+  )) as unknown as Row[];
 
   if (projects.length === 0) {
     console.log("No projects need a slug — already backfilled.");
     return;
   }
 
-  const taken = new Set<string>(
-    (runD1Query("SELECT slug FROM projects WHERE slug IS NOT NULL;") as {
-      slug: string;
-    }[]).map((row) => row.slug),
-  );
+  const existing = (await queryRows(
+    "SELECT slug FROM projects WHERE slug IS NOT NULL;",
+  )) as unknown as { slug: string }[];
+  const taken = new Set<string>(existing.map((row) => row.slug));
 
   const updates: string[] = [];
   for (const project of projects) {
@@ -86,18 +65,7 @@ async function main() {
     return;
   }
 
-  execFileSync(
-    "npx",
-    [
-      "wrangler",
-      "d1",
-      "execute",
-      "PM_DB",
-      "--local",
-      `--command=${updates.join("\n")}`,
-    ],
-    { stdio: "inherit" },
-  );
+  await execSql(updates.join("\n"));
 
   console.log(`\nBackfilled ${updates.length} project slug(s).`);
 }

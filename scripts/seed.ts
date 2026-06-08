@@ -1,6 +1,7 @@
-// Seed a single owner account into the local D1 database for development.
+// Seed a single owner account into the database for development.
 //
-// Usage:  bun run db:seed:local
+// Usage:  npm run db:seed:local   (local Miniflare D1)
+//         npm run db:seed:node    (node-mode SQLite file at SQLITE_DB_PATH)
 //
 // Defaults to email "admin@admin.com" / password "admin". This bypasses
 // Better Auth's signup route (which is disabled via emailAndPassword.disableSignUp)
@@ -8,9 +9,10 @@
 // scrypt hash, so the resulting credential is identical to one produced by
 // the normal sign-up flow.
 
-import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { hashPassword } from "better-auth/crypto";
+
+import { execSql } from "./seed-db";
 
 const EMAIL = (process.env.SEED_EMAIL ?? "admin@admin.com").toLowerCase();
 const PASSWORD = process.env.SEED_PASSWORD ?? "admin";
@@ -35,11 +37,7 @@ async function main() {
     `    );`,
   ].join("\n");
 
-  execFileSync(
-    "npx",
-    ["wrangler", "d1", "execute", "PM_DB", "--local", `--command=${sql}`],
-    { stdio: "inherit" },
-  );
+  await execSql(sql);
 
   console.log(`\nSeeded login: ${EMAIL} / ${PASSWORD}`);
 }

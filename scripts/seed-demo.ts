@@ -1,6 +1,7 @@
-// Seed a realistic demo workspace into the local D1, for development and docs.
+// Seed a realistic demo workspace into the database, for development and docs.
 //
-// Usage:  bun run db:seed:demo:local
+// Usage:  npm run db:seed:demo:local   (local Miniflare D1)
+//         npm run db:seed:demo:node    (node-mode SQLite file at SQLITE_DB_PATH)
 //
 // Populates a showcase workspace on top of the owner account: 3 demo projects
 // with varied statuses, tasks spread across every board column (with priorities,
@@ -15,10 +16,11 @@
 //
 // The owner is resolved by email (OWNER_EMAIL, default admin@admin.com) rather
 // than a hard-coded id, so it works on any machine. Create the owner first with
-// `bun run db:seed:local` (or the one-time /sign-in bootstrap form).
+// `npm run db:seed:local` (or the one-time /sign-in bootstrap form).
 
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+
+import { execSql, queryRows } from "./seed-db";
 
 const OWNER_EMAIL = (
   process.env.SEED_EMAIL ??
@@ -397,35 +399,34 @@ insert(
 );
 
 // ---------- preflight: owner must exist ----------
-function ownerExists(): boolean {
+async function ownerExists(): Promise<boolean> {
   try {
-    const out = execFileSync(
-      "npx",
-      ["wrangler", "d1", "execute", "PM_DB", "--local", "--json", "--command", `SELECT id FROM user WHERE email = '${esc(OWNER_EMAIL)}' LIMIT 1;`],
-      { encoding: "utf8" },
+    const rows = await queryRows(
+      `SELECT id FROM user WHERE email = '${esc(OWNER_EMAIL)}' LIMIT 1;`,
     );
-    const json = JSON.parse(out.slice(out.indexOf("[")));
-    return Boolean(json?.[0]?.results?.length);
+    return rows.length > 0;
   } catch {
     return true; // if the check is inconclusive, let the insert surface the real error
   }
 }
 
-if (!ownerExists()) {
-  console.error(
-    `No owner account found for ${OWNER_EMAIL}.\n` +
-      `Create it first with:  bun run db:seed:local\n` +
-      `(or sign up via the one-time /sign-in bootstrap form), then re-run this.`,
-  );
-  process.exit(1);
+async function run() {
+  if (!(await ownerExists())) {
+    console.error(
+      `No owner account found for ${OWNER_EMAIL}.\n` +
+        `Create it first with:  npm run db:seed:local  (or db:seed:node)\n` +
+        `(or sign up via the one-time /sign-in bootstrap form), then re-run this.`,
+    );
+    process.exit(1);
+  }
+
+  await execSql(statements.join("\n"));
 }
 
-const sql = statements.join("\n");
-execFileSync(
-  "npx",
-  ["wrangler", "d1", "execute", "PM_DB", "--local", `--command=${sql}`],
-  { stdio: "inherit" },
-);
+run().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
 
 console.log(
   `\nSeeded demo workspace for ${OWNER_EMAIL}: ` +

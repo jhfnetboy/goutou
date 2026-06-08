@@ -73,8 +73,9 @@ references below._
 - **Node.js 20+** and **npm** (CI runs on Node 24).
 - A **Cloudflare account** is only needed to deploy — local development runs fully
   offline via Miniflare, no account required.
-- **[Bun](https://bun.sh)** — optional, used only by the seed/backfill scripts
-  (`db:seed:local`, `db:slugs:local`).
+
+That's it — the seed/backfill scripts run via `tsx` (a dev dependency), so no
+extra runtime is needed.
 
 ## Local setup
 
@@ -89,10 +90,9 @@ references below._
 2. Copy `.dev.vars.example` to `.dev.vars` and fill in the values (each is
    documented inline in that file).
 3. Apply migrations to the local D1: `npm run db:migrate:local`.
-4. (Optional, requires [Bun](https://bun.sh)) Seed a local admin user —
-   `admin@admin.com` / `admin`: `npm run db:seed:local`. Or skip it and create the
-   owner via the one-time form at `/sign-in`, exactly as production does
-   (see [Auth](#auth)).
+4. (Optional) Seed a local admin user — `admin@admin.com` / `admin`:
+   `npm run db:seed:local`. Or skip it and create the owner via the one-time form
+   at `/sign-in`, exactly as production does (see [Auth](#auth)).
 5. Run `npm run dev` for Next.js local development.
 6. Run `npm run preview` to test inside the Workers runtime.
 
@@ -256,9 +256,11 @@ npm run db:migrate:local   # → local Miniflare D1   (dev)
 npm run db:migrate:remote  # → deployed Cloudflare D1
 npm run db:migrate:node    # → local SQLite file    (node mode, SQLITE_DB_PATH)
 
-# Seed (dev only, needs Bun — writes to the local Miniflare D1)
+# Seed (runs via tsx, no Bun) — :local → Miniflare D1, :node → the SQLite file
 npm run db:seed:local        # owner: admin@admin.com / admin
 npm run db:seed:demo:local   # demo projects / tasks / requests
+npm run db:seed:node         # same owner, into the node-mode SQLite file
+npm run db:seed:demo:node    # same demo workspace, into the node-mode SQLite file
 
 # Self-host on a VM (node mode)
 npm run build:node
@@ -297,11 +299,12 @@ npm run deploy
 ### Seed data for dev testing
 
 `npm run db:seed:local` gives you an owner you can sign in with immediately
-(`admin@admin.com` / `admin`); `npm run db:seed:demo:local` adds demo content on
-top. Both require **Bun**, target the **local Miniflare D1**, and assume migrations
-have been applied. In **node mode** the seed scripts don't apply (they're
-wrangler/D1-only) — bootstrap the owner via the one-time form at `/sign-in`, or run
-SQL against the SQLite file directly.
+(`admin@admin.com` / `admin`); `npm run db:seed:demo:local` adds a demo workspace
+(projects, tasks, requests, daily items, teammates) on top. They run via `tsx`
+(no Bun needed), target the **local Miniflare D1**, and assume migrations have been
+applied. For a self-hosted **node** instance, the `:node` variants
+(`db:seed:node`, `db:seed:demo:node`) write the same data into the SQLite file at
+`SQLITE_DB_PATH` — run `npm run db:migrate:node` first.
 
 ## App structure
 

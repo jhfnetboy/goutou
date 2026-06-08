@@ -38,9 +38,12 @@
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "db:migrate:local": "wrangler d1 migrations apply PM_DB --local",
     "db:migrate:remote": "wrangler d1 migrations apply PM_DB --remote",
-    "db:seed:local": "bun run scripts/seed.ts",
-    "db:seed:demo:local": "bun run scripts/seed-demo.ts",
-    "db:slugs:local": "bun run scripts/backfill-project-slugs.ts"
+    "db:seed:local": "tsx scripts/seed.ts",
+    "db:seed:demo:local": "tsx scripts/seed-demo.ts",
+    "db:seed:node": "cross-env RUNTIME=node tsx scripts/seed.ts",
+    "db:seed:demo:node": "cross-env RUNTIME=node tsx scripts/seed-demo.ts",
+    "db:slugs:local": "tsx scripts/backfill-project-slugs.ts",
+    "db:slugs:node": "cross-env RUNTIME=node tsx scripts/backfill-project-slugs.ts"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.6.9",
