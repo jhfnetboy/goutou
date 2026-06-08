@@ -6,6 +6,18 @@ const optionalString = (value: string | undefined) => {
   return trimmed ? trimmed : undefined;
 };
 
+// RUNTIME selects the deployment runtime: "node" (self-hosted Node server + local
+// SQLite) or unset/"cloudflare" (Cloudflare Workers). Fail fast on a typo so a
+// mis-set value surfaces at boot rather than as a confusing off-Workers
+// getCloudflareContext() error on the first request.
+const runtimeValue = optionalString(process.env.RUNTIME);
+if (runtimeValue && runtimeValue !== "node" && runtimeValue !== "cloudflare") {
+  throw new Error(
+    `Invalid RUNTIME="${runtimeValue}". Use "node" for the self-hosted Node ` +
+      `runtime, or leave it unset (or "cloudflare") for Cloudflare Workers.`,
+  );
+}
+
 const ownerEmailValue = optionalString(process.env.OWNER_EMAIL);
 const parsedOwnerEmail = ownerEmailValue
   ? z.string().email().safeParse(ownerEmailValue.toLowerCase())

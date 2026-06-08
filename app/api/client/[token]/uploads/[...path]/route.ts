@@ -1,9 +1,9 @@
-import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { getDb } from "@/lib/db";
 import { projects, taskComments, tasks } from "@/lib/db/schema";
+import { getStorage } from "@/lib/storage";
 
 type RouteContext = { params: Promise<{ token: string; path: string[] }> };
 
@@ -60,24 +60,27 @@ export async function GET(_request: Request, context: RouteContext) {
     return new NextResponse("Not found", { status: 404 });
   }
 
-  const { env } = getCloudflareContext();
-  if (!env.UPLOADS) {
-    return new NextResponse("Uploads are not configured.", { status: 503 });
+  const storage = getStorage();
+  if (!storage) {
+    return NextResponse.json(
+      { error: "Uploads are not configured on this environment." },
+      { status: 503 },
+    );
   }
 
-  const object = await env.UPLOADS.get(key);
+  const object = await storage.get(key);
   if (!object) {
     return new NextResponse("Not found", { status: 404 });
   }
 
   const headers = new Headers();
-  if (object.httpMetadata?.contentType) {
-    headers.set("content-type", object.httpMetadata.contentType);
+  if (object.contentType) {
+    headers.set("content-type", object.contentType);
   }
   headers.set("cache-control", "public, max-age=3600");
   headers.set("x-content-type-options", "nosniff");
   headers.set("content-disposition", "inline");
-  headers.set("etag", object.httpEtag);
+  headers.set("etag", object.etag);
 
-  return new NextResponse(object.body as unknown as ReadableStream, { headers });
+  return new NextResponse(object.body, { headers });
 }

@@ -78,6 +78,13 @@ references below._
 
 ## Local setup
 
+> **Fastest path — the setup wizard.** Run `npm install` then `npm run setup`. It
+> walks you through one of three modes — **dev (local)**, **production (node)**
+> (self-host on a VM: Node server + SQLite, no Cloudflare), or **production
+> (cloudflare)** — generating the env, config, and (for node) the PM2/systemd/
+> Docker + reverse-proxy artifacts. The manual steps below are the equivalent of
+> the dev mode, if you'd rather do it by hand.
+
 1. Install dependencies: `npm install`.
 2. Copy `.dev.vars.example` to `.dev.vars` and fill in the values (each is
    documented inline in that file).
@@ -176,6 +183,13 @@ that can't speak remote MCP can bridge with
 For the full architecture and engineering reference, see [docs/MCP.md](docs/MCP.md).
 
 ## Deploy
+
+> **Two targets, one wizard.** `npm run setup` configures either **Cloudflare
+> Workers** (mode 3, the steps below) or a **self-hosted Node server** (mode 2 —
+> a standalone `next start` on a local SQLite file + disk uploads, no Cloudflare
+> dependency, kept alive by PM2/systemd/Docker). See
+> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#7-deployment) for the trade-offs
+> between them.
 
 Runs on Cloudflare Workers (via OpenNext). Before the first deploy:
 

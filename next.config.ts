@@ -1,7 +1,13 @@
 import type { NextConfig } from "next";
 import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
 
-initOpenNextCloudflareForDev();
+// In node mode (RUNTIME=node) we run a plain Node server, so we must NOT
+// initialise the OpenNext/Miniflare dev bindings — that path dynamically imports
+// wrangler and boots Miniflare, exactly the Cloudflare dependency node mode
+// eliminates. The default (unset) branch is unchanged for dev/cloudflare.
+if ((process.env.RUNTIME ?? "cloudflare") !== "node") {
+  initOpenNextCloudflareForDev();
+}
 
 // Defense-in-depth response headers applied to every route. The public client
 // board (/client/[token]) is unauthenticated, so frame-ancestors + X-Frame-Options
@@ -26,6 +32,10 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // The node-mode SQLite driver (@libsql/client) is native and must never be
+  // bundled into the Workers build — keep it external. (It's also on Next's
+  // built-in auto-externalise list; this is belt-and-braces.)
+  serverExternalPackages: ["@libsql/client"],
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

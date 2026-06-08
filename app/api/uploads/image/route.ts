@@ -1,7 +1,7 @@
-import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { NextResponse } from "next/server";
 
 import { requireViewer } from "@/lib/auth-server";
+import { getStorage } from "@/lib/storage";
 
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 const ALLOWED_MIME = new Set([
@@ -23,8 +23,8 @@ const EXTENSION_BY_MIME: Record<string, string> = {
 export async function POST(request: Request) {
   await requireViewer();
 
-  const { env } = getCloudflareContext();
-  if (!env.UPLOADS) {
+  const storage = getStorage();
+  if (!storage) {
     return NextResponse.json(
       { error: "Uploads are not configured on this environment." },
       { status: 503 },
@@ -58,11 +58,9 @@ export async function POST(request: Request) {
   const key = `images/${crypto.randomUUID()}.${ext}`;
   const buffer = await file.arrayBuffer();
 
-  await env.UPLOADS.put(key, buffer, {
-    httpMetadata: {
-      contentType: file.type,
-      cacheControl: "public, max-age=31536000, immutable",
-    },
+  await storage.put(key, buffer, {
+    contentType: file.type,
+    cacheControl: "public, max-age=31536000, immutable",
   });
 
   return NextResponse.json({ url: `/api/uploads/${key}` });

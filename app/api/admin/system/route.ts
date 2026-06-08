@@ -1,8 +1,8 @@
-import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { requireRole } from "@/lib/auth-server";
+import { getStorage } from "@/lib/storage";
 import { getSystemSettings, updateSystemSettings } from "@/lib/system-settings";
 
 // "" clears the asset (→ null); any value must be a branding/ key minted by the
@@ -58,8 +58,8 @@ export async function PATCH(request: Request) {
   // Delete branding objects that were replaced/removed so R2 doesn't accumulate
   // orphans. Best-effort — a failed delete must not fail the save.
   try {
-    const { env } = getCloudflareContext();
-    if (env.UPLOADS) {
+    const storage = getStorage();
+    if (storage) {
       const stale = (
         [
           [previous.logoDarkKey, next.logoDarkKey],
@@ -70,7 +70,7 @@ export async function PATCH(request: Request) {
       )
         .filter(([oldKey, newKey]) => oldKey && oldKey !== newKey)
         .map(([oldKey]) => oldKey as string);
-      await Promise.all(stale.map((key) => env.UPLOADS.delete(key)));
+      await Promise.all(stale.map((key) => storage.delete(key)));
     }
   } catch {
     // ignore cleanup failures

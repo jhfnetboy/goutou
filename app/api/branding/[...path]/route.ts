@@ -1,5 +1,6 @@
-import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { NextResponse } from "next/server";
+
+import { getStorage } from "@/lib/storage";
 
 type RouteContext = { params: Promise<{ path: string[] }> };
 
@@ -10,8 +11,8 @@ type RouteContext = { params: Promise<{ path: string[] }> };
 // and remain reachable only through the auth-gated uploads route, so the two
 // keyspaces stay cleanly partitioned.
 export async function GET(_request: Request, context: RouteContext) {
-  const { env } = getCloudflareContext();
-  if (!env.UPLOADS) {
+  const storage = getStorage();
+  if (!storage) {
     return NextResponse.json(
       { error: "Uploads are not configured on this environment." },
       { status: 503 },
@@ -24,23 +25,23 @@ export async function GET(_request: Request, context: RouteContext) {
     return new NextResponse("Not found", { status: 404 });
   }
 
-  const object = await env.UPLOADS.get(key);
+  const object = await storage.get(key);
   if (!object) {
     return new NextResponse("Not found", { status: 404 });
   }
 
   const headers = new Headers();
-  if (object.httpMetadata?.contentType) {
-    headers.set("content-type", object.httpMetadata.contentType);
+  if (object.contentType) {
+    headers.set("content-type", object.contentType);
   }
   // Immutable bytes (keys are content-random UUIDs); cache-busting is handled by
   // the ?v=<updatedAt> query on every reference, so we can cache hard.
   headers.set("cache-control", "public, max-age=31536000, immutable");
   headers.set("x-content-type-options", "nosniff");
   headers.set("content-disposition", "inline");
-  headers.set("etag", object.httpEtag);
+  headers.set("etag", object.etag);
 
-  return new NextResponse(object.body as unknown as ReadableStream, {
+  return new NextResponse(object.body, {
     headers,
   });
 }

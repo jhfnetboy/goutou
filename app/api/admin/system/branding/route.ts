@@ -1,7 +1,7 @@
-import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { NextResponse } from "next/server";
 
 import { requireRole } from "@/lib/auth-server";
+import { getStorage } from "@/lib/storage";
 
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 // PNG/JPEG/WebP only. SVG is intentionally excluded — an inline-served SVG can
@@ -31,8 +31,8 @@ const ALLOWED_KINDS = new Set([
 export async function POST(request: Request) {
   await requireRole(["owner", "admin"]);
 
-  const { env } = getCloudflareContext();
-  if (!env.UPLOADS) {
+  const storage = getStorage();
+  if (!storage) {
     return NextResponse.json(
       { error: "Uploads are not configured on this environment." },
       { status: 503 },
@@ -66,11 +66,9 @@ export async function POST(request: Request) {
   const key = `branding/${kind}-${crypto.randomUUID()}.${ext}`;
   const buffer = await file.arrayBuffer();
 
-  await env.UPLOADS.put(key, buffer, {
-    httpMetadata: {
-      contentType: file.type,
-      cacheControl: "public, max-age=31536000, immutable",
-    },
+  await storage.put(key, buffer, {
+    contentType: file.type,
+    cacheControl: "public, max-age=31536000, immutable",
   });
 
   return NextResponse.json({ key, url: `/api/branding/${key}` });
