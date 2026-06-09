@@ -37,6 +37,15 @@ const betterAuthUrl = optionalString(process.env.BETTER_AUTH_URL);
 // set this in production to your AI clients' origins.
 const mcpAllowedOriginsValue = optionalString(process.env.MCP_ALLOWED_ORIGINS);
 
+// Extra Origins allowed to make auth requests (the CSRF allow-list), on top of
+// BETTER_AUTH_URL + localhost. Comma-separated. Use this when the app is reachable
+// at more than one hostname — e.g. both the *.workers.dev URL and a custom domain.
+// BETTER_AUTH_URL stays the single canonical base (OAuth callbacks, links); these
+// only widen which Origins are accepted.
+const extraTrustedOriginsValue = optionalString(
+  process.env.BETTER_AUTH_TRUSTED_ORIGINS,
+);
+
 // Fail closed: the default secret is published in this repo, so signing Better
 // Auth cookies with it in production would let anyone forge sessions.
 // BETTER_AUTH_URL is required in production and is unset both locally and at
@@ -66,8 +75,16 @@ export const serverEnv = {
     : [],
 };
 
-export const authTrustedOrigins = [
-  "http://localhost:3000",
-  "http://127.0.0.1:3000",
-  ...(serverEnv.betterAuthUrl ? [serverEnv.betterAuthUrl] : []),
-];
+export const authTrustedOrigins = Array.from(
+  new Set([
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    ...(serverEnv.betterAuthUrl ? [serverEnv.betterAuthUrl] : []),
+    ...(extraTrustedOriginsValue
+      ? extraTrustedOriginsValue
+          .split(",")
+          .map((origin) => origin.trim())
+          .filter(Boolean)
+      : []),
+  ]),
+);
