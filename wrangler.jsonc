@@ -21,8 +21,8 @@
     {
       "binding": "PM_DB",
       "database_name": "seeder",
-      "database_id": "<your-d1-database-id>",
-      "preview_database_id": "<your-d1-database-id>",
+      "database_id": "b9596b56-bb58-41be-bcf1-17e30426ec29",
+      "preview_database_id": "b9596b56-bb58-41be-bcf1-17e30426ec29",
       "migrations_dir": "migrations"
     }
   ],
