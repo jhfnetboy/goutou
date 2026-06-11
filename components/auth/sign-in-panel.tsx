@@ -236,7 +236,7 @@ export function SignInPanel({
                       onChange={(event) => setEmail(event.target.value)}
                       readOnly={emailReadOnly}
                       className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted"
-                      placeholder={ownerEmail}
+                      placeholder="user@user.com"
                     />
                   </div>
                 </label>
