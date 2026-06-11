@@ -19,6 +19,7 @@ import {
   requireRole,
   requireSession,
   requireViewer,
+  type Viewer,
 } from "@/lib/auth-server";
 import { canAccessProject } from "@/lib/authz";
 import {
@@ -358,6 +359,40 @@ async function assertProjectOwnership(projectId: string, ownerId: string) {
   }
 
   return project;
+}
+
+// Task mutations are open to anyone who can access the project — admin tier, the
+// project owner, or a project member — matching /api/tasks/reorder and the MCP
+// service layer (lib/services/tasks.ts), so the New/Edit/Delete-task modals are
+// no stricter than the board itself. Returns the project row (callers need its
+// slug for task codes).
+async function assertProjectTaskAccess(viewer: Viewer, projectId: string) {
+  const db = getDb();
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+  if (!project || !(await canAccessProject(viewer, projectId))) {
+    throw new Error("Project not found.");
+  }
+  return project;
+}
+
+// Load a task by (id, project) with no owner filter. Callers gate access via
+// assertProjectTaskAccess first, so any project collaborator — not just the
+// task's creator — can act on it.
+async function loadProjectTask(taskId: string, projectId: string) {
+  const db = getDb();
+  const [task] = await db
+    .select()
+    .from(tasks)
+    .where(and(eq(tasks.id, taskId), eq(tasks.projectId, projectId)))
+    .limit(1);
+  if (!task) {
+    throw new Error("Task not found.");
+  }
+  return task;
 }
 
 async function getNextTaskSortOrder(
@@ -1454,12 +1489,12 @@ export async function convertRequestToTaskAction(formData: FormData) {
 }
 
 export async function createTaskAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = taskCreateSchema.parse(toPayload(formData));
   const db = getDb();
   const now = new Date();
 
-  const project = await assertProjectOwnership(payload.projectId, session.user.id);
+  const project = await assertProjectTaskAccess(viewer, payload.projectId);
 
   const sortOrder = await getNextTaskSortOrder(payload.projectId, "todo");
   const taskId = crypto.randomUUID();
@@ -1485,7 +1520,7 @@ export async function createTaskAction(formData: FormData) {
 
   await db.insert(tasks).values({
     id: taskId,
-    ownerId: session.user.id,
+    ownerId: viewer.id,
     projectId: payload.projectId,
     requestId,
     title: payload.title,
@@ -1505,7 +1540,7 @@ export async function createTaskAction(formData: FormData) {
 
   await touchProject(payload.projectId, now);
   await logProjectActivity(db, {
-    ownerId: session.user.id,
+    ownerId: viewer.id,
     projectId: payload.projectId,
     entityType: "task",
     entityId: taskId,
@@ -1531,27 +1566,13 @@ export async function createTaskAction(formData: FormData) {
 }
 
 export async function updateTaskAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = taskUpdateSchema.parse(toPayload(formData));
   const db = getDb();
 
-  await assertProjectOwnership(payload.projectId, session.user.id);
+  await assertProjectTaskAccess(viewer, payload.projectId);
 
-  const [existingTask] = await db
-    .select()
-    .from(tasks)
-    .where(
-      and(
-        eq(tasks.id, payload.taskId),
-        eq(tasks.projectId, payload.projectId),
-        eq(tasks.ownerId, session.user.id),
-      ),
-    )
-    .limit(1);
-
-  if (!existingTask) {
-    throw new Error("Task not found.");
-  }
+  const existingTask = await loadProjectTask(payload.taskId, payload.projectId);
 
   const nextSortOrder =
     existingTask.status === payload.status
@@ -1616,7 +1637,7 @@ export async function updateTaskAction(formData: FormData) {
 
   await touchProject(payload.projectId, now);
   await logProjectActivity(db, {
-    ownerId: session.user.id,
+    ownerId: viewer.id,
     projectId: payload.projectId,
     entityType: "task",
     entityId: payload.taskId,
@@ -1646,10 +1667,13 @@ export async function updateTaskAction(formData: FormData) {
 }
 
 export async function deleteTaskAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = taskDeleteSchema.parse(toPayload(formData));
   const db = getDb();
   const now = new Date();
+
+  await assertProjectTaskAccess(viewer, payload.projectId);
+
   const [task] = await db
     .select()
     .from(tasks)
@@ -1657,12 +1681,9 @@ export async function deleteTaskAction(formData: FormData) {
       and(
         eq(tasks.id, payload.taskId),
         eq(tasks.projectId, payload.projectId),
-        eq(tasks.ownerId, session.user.id),
       ),
     )
     .limit(1);
-
-  await assertProjectOwnership(payload.projectId, session.user.id);
 
   await db
     .delete(tasks)
@@ -1670,7 +1691,6 @@ export async function deleteTaskAction(formData: FormData) {
       and(
         eq(tasks.id, payload.taskId),
         eq(tasks.projectId, payload.projectId),
-        eq(tasks.ownerId, session.user.id),
       ),
     );
 
@@ -1678,7 +1698,7 @@ export async function deleteTaskAction(formData: FormData) {
 
   if (task) {
     await logProjectActivity(db, {
-      ownerId: session.user.id,
+      ownerId: viewer.id,
       projectId: payload.projectId,
       entityType: "task",
       entityId: payload.taskId,
@@ -1772,17 +1792,17 @@ export async function saveProjectNoteAction(formData: FormData) {
 }
 
 export async function createTaskChecklistItemAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = checklistCreateSchema.parse(toPayload(formData));
   const db = getDb();
   const now = new Date();
 
-  await assertProjectOwnership(payload.projectId, session.user.id);
-  await assertTaskOwnership(payload.taskId, payload.projectId, session.user.id);
+  await assertProjectTaskAccess(viewer, payload.projectId);
+  await loadProjectTask(payload.taskId, payload.projectId);
 
   await db.insert(taskChecklistItems).values({
     id: crypto.randomUUID(),
-    ownerId: session.user.id,
+    ownerId: viewer.id,
     projectId: payload.projectId,
     taskId: payload.taskId,
     content: payload.content,
@@ -1798,7 +1818,7 @@ export async function createTaskChecklistItemAction(formData: FormData) {
   ]);
 
   await logProjectActivity(db, {
-    ownerId: session.user.id,
+    ownerId: viewer.id,
     projectId: payload.projectId,
     entityType: "task",
     entityId: payload.taskId,
@@ -1817,13 +1837,13 @@ export async function createTaskChecklistItemAction(formData: FormData) {
 }
 
 export async function toggleTaskChecklistItemAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = checklistToggleSchema.parse(toPayload(formData));
   const db = getDb();
   const now = new Date();
 
-  await assertProjectOwnership(payload.projectId, session.user.id);
-  await assertTaskOwnership(payload.taskId, payload.projectId, session.user.id);
+  await assertProjectTaskAccess(viewer, payload.projectId);
+  await loadProjectTask(payload.taskId, payload.projectId);
 
   const [existingItem] = await db
     .select()
@@ -1832,7 +1852,6 @@ export async function toggleTaskChecklistItemAction(formData: FormData) {
       and(
         eq(taskChecklistItems.id, payload.checklistItemId),
         eq(taskChecklistItems.taskId, payload.taskId),
-        eq(taskChecklistItems.ownerId, session.user.id),
       ),
     )
     .limit(1);
@@ -1857,7 +1876,7 @@ export async function toggleTaskChecklistItemAction(formData: FormData) {
   ]);
 
   await logProjectActivity(db, {
-    ownerId: session.user.id,
+    ownerId: viewer.id,
     projectId: payload.projectId,
     entityType: "task",
     entityId: payload.taskId,
@@ -1884,13 +1903,13 @@ export async function toggleTaskChecklistItemAction(formData: FormData) {
 }
 
 export async function deleteTaskChecklistItemAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = checklistDeleteSchema.parse(toPayload(formData));
   const db = getDb();
   const now = new Date();
 
-  await assertProjectOwnership(payload.projectId, session.user.id);
-  await assertTaskOwnership(payload.taskId, payload.projectId, session.user.id);
+  await assertProjectTaskAccess(viewer, payload.projectId);
+  await loadProjectTask(payload.taskId, payload.projectId);
 
   const [removedItem] = await db
     .select({ content: taskChecklistItems.content })
@@ -1899,7 +1918,6 @@ export async function deleteTaskChecklistItemAction(formData: FormData) {
       and(
         eq(taskChecklistItems.id, payload.checklistItemId),
         eq(taskChecklistItems.taskId, payload.taskId),
-        eq(taskChecklistItems.ownerId, session.user.id),
       ),
     )
     .limit(1);
@@ -1910,7 +1928,6 @@ export async function deleteTaskChecklistItemAction(formData: FormData) {
       and(
         eq(taskChecklistItems.id, payload.checklistItemId),
         eq(taskChecklistItems.taskId, payload.taskId),
-        eq(taskChecklistItems.ownerId, session.user.id),
       ),
     );
 
@@ -1921,7 +1938,7 @@ export async function deleteTaskChecklistItemAction(formData: FormData) {
 
   if (removedItem) {
     await logProjectActivity(db, {
-      ownerId: session.user.id,
+      ownerId: viewer.id,
       projectId: payload.projectId,
       entityType: "task",
       entityId: payload.taskId,
