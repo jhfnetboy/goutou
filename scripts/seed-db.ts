@@ -1,14 +1,18 @@
 // Shared database execution for the seed scripts, so the same SQL runs against
-// either target:
+// any target:
 //   - default          → the local Miniflare D1 (via `wrangler d1 execute --local`)
+//   - D1_REMOTE=1       → the deployed Cloudflare D1 (via `wrangler d1 execute --remote`)
 //   - RUNTIME=node      → the node-mode SQLite file at SQLITE_DB_PATH (via libsql)
-// This lets `db:seed:local` / `db:seed:demo:local` (Miniflare) and
+// This lets `db:seed:local` / `db:seed:demo:local` (Miniflare),
+// `db:seed:remote` / `db:seed:demo:remote` (deployed D1), and
 // `db:seed:node` / `db:seed:demo:node` (self-hosted Node) share one code path.
 
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 
 const isNode = process.env.RUNTIME === "node";
+// Which D1 the wrangler-backed path targets: --remote (deployed) or --local.
+const d1Flag = process.env.D1_REMOTE === "1" ? "--remote" : "--local";
 
 type LibsqlClient = {
   executeMultiple(sql: string): Promise<unknown>;
@@ -35,7 +39,7 @@ export async function execSql(sql: string): Promise<void> {
   }
   execFileSync(
     "npx",
-    ["wrangler", "d1", "execute", "PM_DB", "--local", `--command=${sql}`],
+    ["wrangler", "d1", "execute", "PM_DB", d1Flag, `--command=${sql}`],
     { stdio: "inherit" },
   );
 }
@@ -49,7 +53,7 @@ export async function queryRows(
   }
   const out = execFileSync(
     "npx",
-    ["wrangler", "d1", "execute", "PM_DB", "--local", "--json", "--command", sql],
+    ["wrangler", "d1", "execute", "PM_DB", d1Flag, "--json", "--command", sql],
     { encoding: "utf8" },
   );
   const json = JSON.parse(out.slice(out.indexOf("["))) as

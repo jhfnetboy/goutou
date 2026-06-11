@@ -40,6 +40,8 @@
     "db:migrate:remote": "wrangler d1 migrations apply PM_DB --remote",
     "db:seed:local": "tsx scripts/seed.ts",
     "db:seed:demo:local": "tsx scripts/seed-demo.ts",
+    "db:seed:remote": "cross-env D1_REMOTE=1 tsx scripts/seed.ts",
+    "db:seed:demo:remote": "cross-env D1_REMOTE=1 tsx scripts/seed-demo.ts",
     "db:seed:node": "cross-env RUNTIME=node tsx scripts/seed.ts",
     "db:seed:demo:node": "cross-env RUNTIME=node tsx scripts/seed-demo.ts",
     "db:slugs:local": "tsx scripts/backfill-project-slugs.ts",
