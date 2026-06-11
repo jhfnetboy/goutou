@@ -757,6 +757,7 @@ export async function getPublicProjectBoard(shareToken: string) {
       clientName: projects.clientName,
       summary: projects.summary,
       status: projects.status,
+      color: projects.color,
       deadline: projects.deadline,
       updatedAt: projects.updatedAt,
       archivedAt: projects.archivedAt,

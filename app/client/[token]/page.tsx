@@ -66,6 +66,15 @@ export default async function ClientProjectBoardPage({
     doing: publicBoard.tasks.filter((task) => task.status === "doing").length,
     done: publicBoard.tasks.filter((task) => task.status === "done").length,
   };
+  // Echo the project's set color on the public hero — a left-edge accent plus a
+  // soft wash — instead of the neutral grey panel. Matches the projects list.
+  const accentStyle = publicBoard.project.color
+    ? {
+        borderLeftWidth: 3,
+        borderLeftColor: publicBoard.project.color,
+        backgroundColor: `color-mix(in srgb, ${publicBoard.project.color} 8%, transparent)`,
+      }
+    : undefined;
   const formattedUpdates: ClientStatusUpdate[] = publicBoard.statusUpdates.map(
     (update) => ({
       id: update.id,
@@ -88,7 +97,7 @@ export default async function ClientProjectBoardPage({
         </div>
       </div>
       <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
-        <section className="ui-panel p-5 sm:p-6">
+        <section className="ui-panel p-5 sm:p-6" style={accentStyle}>
           <div className="flex flex-wrap items-start justify-between gap-6">
             <div className="max-w-3xl space-y-3">
               <div className="inline-flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5 font-mono text-[11px] font-medium uppercase tracking-[0.04em] text-foreground">
