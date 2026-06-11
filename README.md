@@ -329,7 +329,7 @@ Each project workspace includes:
 
 Need a hand, hit a bug, or have an idea for an improvement? Open an issue on
 [GitHub](https://github.com/danielsyauqi/Seeder/issues), or email us at
-[danielcruzz04@gmail.com](mailto:danielcruzz04@gmail.com).
+[seeder.admin@gmail.com](mailto:seeder.admin@gmail.com).
 
 ## Contributing
 
