@@ -86,9 +86,10 @@ export function TokenManager({ tokens }: { tokens: TokenListItem[] }) {
             </h1>
             <p className="mt-1 max-w-prose text-[13px] leading-6 text-muted">
               Let an AI assistant or script act as you through the MCP endpoint
-              (<code className="font-mono text-[12px]">/api/mcp</code>). A token
-              can never do more than you can, and is shown only once — treat it
-              like a password.
+              (<code className="font-mono text-[12px]">/api/mcp</code>) — read or
+              edit projects, tasks, requests, members, and settings. A token can
+              never do more than you can, and is shown only once — treat it like a
+              password.
             </p>
           </div>
           <button
@@ -391,13 +392,17 @@ function CreateTokenModal({
                   onChange={(e) => setScope(e.target.value as TokenScope)}
                   className="ui-select"
                 >
-                  <option value="read">Read — query tasks, projects, requests</option>
+                  <option value="read">
+                    Read — browse projects, tasks, requests, and activity
+                  </option>
                   <option value="readwrite">
-                    Read &amp; write — also create, update, delete
+                    Read &amp; write — also manage tasks, projects, members &amp;
+                    invites
                   </option>
                 </select>
                 <span className="text-[12px] text-muted">
-                  A token can never exceed your own access to a project.
+                  A token can never exceed your own access. Editing project
+                  settings, members, and invites still needs owner or admin rights.
                 </span>
               </label>
 

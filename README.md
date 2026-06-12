@@ -161,8 +161,9 @@ Onboarding is **invite-only**, with a single bootstrap exception:
 
 Seeder ships a built-in [Model Context Protocol](https://modelcontextprotocol.io)
 server at **`/api/mcp`**, so AI assistants (Claude, Cursor, ChatGPT, …) can read
-and edit your projects, tasks, requests, and subtasks. It deploys with the app —
-every self-hosted instance gets it for free at `https://<your-domain>/api/mcp`.
+and edit your projects, tasks, requests, subtasks, members, and workspace
+settings. It deploys with the app — every self-hosted instance gets it for free
+at `https://<your-domain>/api/mcp`.
 
 **Connect a client:**
 
@@ -184,15 +185,27 @@ every self-hosted instance gets it for free at `https://<your-domain>/api/mcp`.
 
 A token can never do more than the user who created it — every tool runs under
 that user's existing project access, and write tools only appear for `read & write`
-tokens. All MCP-driven changes show in the project Activity feed, attributed to
-the token's user, exactly like changes made in the UI.
+tokens. Editing project settings is owner-only, and the member and invite tools
+require project-owner or workspace-admin rights — the same gates as the UI. All
+MCP-driven changes show in the project Activity feed, attributed to the token's
+user, exactly like changes made in the UI.
 
-**Tools:** `whoami`, `list-projects`, `list-tasks`, `read-task`, `list-requests`,
-`read-request`, `search`, `list-daily-tasks`, `read-project-notes`,
-`list-project-activity`, `list-status-updates` (read); `create/update/delete-task`,
-`update-task-status`, `create/toggle/update/delete-checklist-item`,
-`create/update/delete-request` (read & write). Project and daily-task write tools
-are planned.
+**Read tools** (any token): `whoami`, `list-projects`, `list-tasks`, `read-task`,
+`list-requests`, `read-request`, `search`, `list-daily-tasks`, `read-project-notes`,
+`list-project-activity`, `list-status-updates`.
+
+**Read & write tools** (a `read & write` token also gets):
+
+- **Tasks** — `create/update/delete-task`, `update-task-status`,
+  `create/toggle/update/delete-checklist-item`.
+- **Requests** — `create/update/delete-request`.
+- **Projects** — `create-project`, `update-project`, `delete-project`,
+  `archive-project`, `restore-project`, `duplicate-project`, `set-project-key`,
+  `set-project-color`, `set-client-board`, `rotate-client-board-link`.
+- **Members** — `list-project-members`, `add-project-member`, `remove-project-member`.
+- **Workspace invites** — `create-invite`, `list-invites`, `revoke-invite`.
+
+Daily-task write tools are still planned.
 
 **Hardening:** set `MCP_ALLOWED_ORIGINS` (comma-separated) to restrict which
 browser origins may call `/api/mcp` (DNS-rebinding protection). It's optional —

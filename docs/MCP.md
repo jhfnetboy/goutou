@@ -21,8 +21,9 @@ that user**, bounded by exactly the project access the user already has. Every
 change flows through the same code the web UI uses, so it lands in the project
 Activity feed identically.
 
-Tool surface today: **projects / tasks / client requests / task checklists**
-(reads + writes). Project- and daily-task *writes* are deferred (see §11).
+Tool surface today: **projects / tasks / client requests / task checklists /
+project members / workspace invites** (reads + writes). Daily-task *writes* are
+the only remaining piece deferred (see §11).
 
 ---
 
@@ -34,7 +35,7 @@ Tool surface today: **projects / tasks / client requests / task checklists**
 | Transport | **Streamable HTTP**, stateless JSON, official `@modelcontextprotocol/sdk` `WebStandardStreamableHTTPServerTransport` | Web `Request`→`Response` native → fits Next.js route handlers + Cloudflare **workerd**. No Node `http` bridge, no Redis. Rejected `mcp-handler` (eager `redis`/`net` imports, pins SDK to 1.26). |
 | Statelessness | `sessionIdGenerator: undefined`, `enableJsonResponse: true`; fresh server+transport per request | No session store / Redis / sticky routing — any Worker isolate serves any request. Also hedges the 2026-07-28 MCP RC, which drops `Mcp-Session-Id`. |
 | Auth | **Hand-rolled PATs** (bearer), not Better-Auth's `apiKey` plugin | The plugin is a separate uninstalled package, defaults to `x-api-key` (not Bearer), its "scopes" are a custom permissions map, and resolving a key yields a *mock session* (not our `Viewer`) — so we'd hand-build the Viewer + `disabledAt` check anyway. Hand-rolling is less security-critical code and zero new deps. |
-| Authz model | Services use `canAccessProject` (admin OR owner OR member), **not** `assertProjectOwnership` | This is the member-aware model the MCP needs; the stricter ownership model stays in the web Server Actions. A token never exceeds its user's own access. |
+| Authz model | **Per-domain, mirroring each web gate**: task/request/checklist tools use member-aware `canAccessProject`; project-settings tools are **owner-only** (`assertProjectManage`, same as the web `assertProjectOwnership`); member tools use `canManageProjectMembers` (owner-or-admin); invite tools use `isAdminTier` (owner/admin, owner-only for admin invites) | Each MCP tool enforces exactly the gate its web counterpart does, so a token never exceeds its user's own access — including the asymmetry that admins manage members on any project but only owners edit project settings. |
 | Code sharing | Extract mutation cores into `lib/services/*` shared by **both** the web route and the MCP server | Identical validation, authz, and activity logging whether a change comes from the UI or an AI. Single Zod schema source of truth. |
 
 ---
@@ -51,13 +52,13 @@ AI client ──POST /api/mcp──▶  app/api/mcp/route.ts
         2. getViewerFromToken(req)  → { viewer, scope }  | 401 (JSON-RPC -32001) if invalid
         3. buildServer({viewer, scope})   (lib/mcp/server.ts)
               · whoami + 10 read tools                (always)
-              · 11 write tools                        (only if scope === "readwrite")
+              · 27 write / management tools           (only if scope === "readwrite")
         4. new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
         5. server.connect(transport); return transport.handleRequest(request)
                                               │
         tool handler ─────────────────────────┘
               · read  → lib/services/reads.ts   (viewer-scoped)
-              · write → lib/services/{tasks,checklist,requests}.ts (viewer, input)
+              · write → lib/services/{tasks,checklist,requests,projects,members}.ts (viewer, input)
                               │
                               ▼
               canAccessProject / getPersonalProjectIds  →  D1 (Drizzle)  →  logProjectActivity
@@ -181,7 +182,7 @@ Two layers, independent:
 
 ---
 
-## 7. Tool surface (22 tools)
+## 7. Tool surface (38 tools)
 
 **Read (always):**
 
@@ -199,23 +200,44 @@ Two layers, independent:
 | `list-project-activity` | `{ projectId?, limit? }` | project history w/ before→after diffs (≤100) |
 | `list-status-updates` | `{ projectId? }` | published client-facing status updates (≤100) |
 
-**Write (only with a `readwrite` token):**
+**Write / management (only with a `readwrite` token):**
 
-`create-task`, `update-task`, `update-task-status`, `delete-task`,
-`create-checklist-item`, `toggle-checklist-item`, `update-checklist-item`,
-`delete-checklist-item`, `create-request`, `update-request`, `delete-request`.
+- **Tasks** — `create-task`, `update-task`, `update-task-status`, `delete-task`,
+  `create-checklist-item`, `toggle-checklist-item`, `update-checklist-item`,
+  `delete-checklist-item`.
+- **Requests** — `create-request`, `update-request`, `delete-request`.
+- **Projects** — `create-project`, `update-project`, `set-project-key`,
+  `set-project-color`, `archive-project`, `restore-project`, `duplicate-project`,
+  `delete-project`, `set-client-board`, `rotate-client-board-link`.
+- **Members** — `list-project-members`, `add-project-member`,
+  `remove-project-member`.
+- **Workspace invites** — `create-invite`, `list-invites`, `revoke-invite`.
+
+(`list-project-members` and `list-invites` are read-only operations but sit behind
+the `readwrite` scope as part of the management surface, so a plain `read` token
+doesn't see them.)
 
 Conventions:
 - Write tools reuse the **service Zod schema** as `inputSchema: <schema>.shape`
   (single source of truth with the web route's parser).
-- Annotations: `destructiveHint: true` on deletes, `idempotentHint` where apt.
+- **Authz is per-domain, matching the web app**: task/request/checklist tools use
+  member-aware `canAccessProject`; project-settings tools are owner-only
+  (`assertProjectManage`); member tools use `canManageProjectMembers`
+  (owner-or-admin); invite tools use `isAdminTier` (owner/admin, owner-only for
+  admin invites).
+- Annotations: `destructiveHint: true` on deletes + `rotate-client-board-link`,
+  `idempotentHint` where apt.
 - Descriptions instruct the agent to **confirm the change with the user before
   calling**.
-- `update-task` / `update-request` are **full-replace** — the description tells
-  the agent to read first and pass the whole field set, or omitted fields clear.
+- `update-task` / `update-request` / `update-project` are **full-replace** — the
+  description tells the agent to read first and pass the whole field set, or
+  omitted optional fields clear.
 - `update-task-status` is a status-only convenience: it loads the row and
   delegates to `updateTask` so the move is diffed + activity-logged (no separate,
   unlogged path).
+- `add-project-member` adds an **existing** workspace user (by email or id); a
+  brand-new person is brought in with `create-invite` first (returns a token +
+  `acceptPath` to share as `<your-domain><acceptPath>`).
 - Service throws (`"Project not found."` etc.) surface as MCP tool errors
   (`isError: true`) via the `runWrite` wrapper — not 500s.
 
@@ -325,10 +347,12 @@ remote MCP can bridge with [`mcp-remote`](https://www.npmjs.com/package/mcp-remo
 
 ## 11. Deferred / roadmap
 
-- **Project & daily-task write tools** — need `lib/services/projects.ts` /
-  `daily.ts`. Those live in `lib/actions.ts` as Server Actions using the stricter
-  `assertProjectOwnership` (owner-scoped) model + notification/board side-effects;
-  extracting them is an auth-posture **decision**, not a mechanical move.
+- **Daily-task write tools** — need `lib/services/daily.ts`. Daily-plan items
+  still live in `lib/actions.ts` as Server Actions with their own reorder/board
+  side-effects; extracting them is the remaining piece of the services migration.
+  (Project writes, members, and invites shipped — extracted to
+  `lib/services/{projects,members}.ts`, gated owner-only / owner-or-admin to match
+  the web; see §7.)
 - **`lib/actions.ts` helper de-dup** — it has byte-identical copies of
   `parseDate` / `touchProject` / `nextTaskCodeNumber` / etc. now in
   `lib/services/_shared.ts`; importing the shared ones is pure cleanup.
