@@ -13,7 +13,6 @@ import {
   diffChanges,
   formatActivityDate,
   priorityLabel,
-  projectStatusLabel,
   requestStatusLabel,
   taskStatusLabel,
 } from "@/lib/activity-diff";
@@ -26,7 +25,6 @@ import {
 } from "@/lib/auth-server";
 import { canAccessProject } from "@/lib/authz";
 import {
-  deriveSlug,
   formatRequestCode,
   formatTaskCode,
   isValidSlug,
@@ -34,6 +32,18 @@ import {
   SLUG_MAX_LENGTH,
 } from "@/lib/codes";
 import { getDb } from "@/lib/db";
+import {
+  archiveProject as archiveProjectService,
+  createProject as createProjectService,
+  deleteProject as deleteProjectService,
+  duplicateProject as duplicateProjectService,
+  restoreProject as restoreProjectService,
+  rotateClientShareToken as rotateClientShareTokenService,
+  setClientShare as setClientShareService,
+  setProjectColor as setProjectColorService,
+  setProjectSlug as setProjectSlugService,
+  updateProject as updateProjectService,
+} from "@/lib/services/projects";
 import { isValidProjectColor } from "@/lib/swatches";
 import {
   clientRequests,
@@ -309,46 +319,6 @@ async function nextRequestCodeNumber(projectId: string): Promise<number> {
   return (row?.value ?? 0) + 1;
 }
 
-async function isSlugTaken(
-  slug: string,
-  excludeProjectId?: string,
-): Promise<boolean> {
-  const db = getDb();
-  const rows = await db
-    .select({ id: projects.id })
-    .from(projects)
-    .where(eq(projects.slug, slug))
-    .limit(2);
-  if (rows.length === 0) return false;
-  if (excludeProjectId && rows.every((row) => row.id === excludeProjectId)) {
-    return false;
-  }
-  return true;
-}
-
-async function resolveSlugForCreate(
-  candidate: string | undefined,
-  fallbackName: string,
-): Promise<string> {
-  const seed = candidate && candidate.length ? candidate : deriveSlug(fallbackName);
-  if (!seed) {
-    // Fallback: random-ish chunk so the project still gets a slug.
-    return `PRJ${Math.floor(Date.now() % 100000)}`;
-  }
-
-  let attempt = seed;
-  let counter = 2;
-  while (await isSlugTaken(attempt)) {
-    const suffix = String(counter);
-    attempt = `${seed.slice(0, SLUG_MAX_LENGTH - suffix.length)}${suffix}`;
-    counter += 1;
-    if (counter > 999) {
-      throw new Error("Could not allocate a unique project slug.");
-    }
-  }
-  return attempt;
-}
-
 async function assertProjectOwnership(projectId: string, ownerId: string) {
   const db = getDb();
   const [project] = await db
@@ -544,123 +514,20 @@ async function getNextChecklistSortOrder(taskId: string) {
 }
 
 export async function createProjectAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = projectCreateSchema.parse(toPayload(formData));
-  const db = getDb();
-  const now = new Date();
-  const projectId = crypto.randomUUID();
-  const slug = await resolveSlugForCreate(payload.slug, payload.name);
 
-  await db.insert(projects).values({
-    id: projectId,
-    ownerId: session.user.id,
-    name: payload.name,
-    slug,
-    clientName: payload.clientName ?? null,
-    summary: payload.summary ?? null,
-    status: payload.status,
-    deadline: parseDate(payload.deadline),
-    color: payload.color ? payload.color : null,
-    archivedAt: null,
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  await logProjectActivity(db, {
-    ownerId: session.user.id,
-    projectId,
-    entityType: "project",
-    entityId: projectId,
-    action: "created",
-    label: "Created project",
-    detail: payload.name,
-    createdAt: now,
-  });
+  const { projectId } = await createProjectService(viewer, payload);
 
   revalidateWorkspaceCollections();
   redirect(withFlash(`/projects/${projectId}`, "project-created"));
 }
 
 export async function updateProjectAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = projectUpdateSchema.parse(toPayload(formData));
-  const db = getDb();
-  const now = new Date();
 
-  await assertProjectOwnership(payload.projectId, session.user.id);
-
-  const [existingProject] = await db
-    .select()
-    .from(projects)
-    .where(
-      and(
-        eq(projects.id, payload.projectId),
-        eq(projects.ownerId, session.user.id),
-      ),
-    )
-    .limit(1);
-
-  if (!existingProject) {
-    throw new Error("Project not found.");
-  }
-
-  const nextDeadline = parseDate(payload.deadline);
-  await db
-    .update(projects)
-    .set({
-      name: payload.name,
-      clientName: payload.clientName ?? null,
-      summary: payload.summary ?? null,
-      status: payload.status,
-      deadline: nextDeadline,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(projects.id, payload.projectId),
-        eq(projects.ownerId, session.user.id),
-      ),
-    );
-
-  const changes = diffChanges([
-    { field: "name", label: "Name", from: existingProject.name, to: payload.name },
-    {
-      field: "clientName",
-      label: "Client",
-      from: existingProject.clientName,
-      to: payload.clientName ?? null,
-    },
-    {
-      field: "summary",
-      label: "Summary",
-      from: existingProject.summary,
-      to: payload.summary ?? null,
-    },
-    {
-      field: "status",
-      label: "Status",
-      from: projectStatusLabel(existingProject.status),
-      to: projectStatusLabel(payload.status),
-    },
-    {
-      field: "deadline",
-      label: "Deadline",
-      from: formatActivityDate(existingProject.deadline),
-      to: formatActivityDate(nextDeadline),
-    },
-  ]);
-
-  await logProjectActivity(db, {
-    ownerId: session.user.id,
-    projectId: payload.projectId,
-    entityType: "project",
-    entityId: payload.projectId,
-    action: "updated",
-    label: "Updated project details",
-    detail: payload.name,
-    changes,
-    createdAt: now,
-  });
+  await updateProjectService(viewer, payload);
 
   const destination = safeReturnPath(
     payload.returnTo,
@@ -681,45 +548,10 @@ export async function updateProjectAction(formData: FormData) {
 }
 
 export async function setProjectSlugAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = projectSlugSchema.parse(toPayload(formData));
-  const db = getDb();
-  const now = new Date();
 
-  const project = await assertProjectOwnership(
-    payload.projectId,
-    session.user.id,
-  );
-
-  if (project.slug === payload.slug) {
-    if (payload.returnTo) redirect(safeReturnPath(payload.returnTo, "/projects"));
-    return;
-  }
-
-  if (await isSlugTaken(payload.slug, payload.projectId)) {
-    throw new Error(`Slug "${payload.slug}" is already taken by another project.`);
-  }
-
-  await db
-    .update(projects)
-    .set({ slug: payload.slug, updatedAt: now })
-    .where(
-      and(
-        eq(projects.id, payload.projectId),
-        eq(projects.ownerId, session.user.id),
-      ),
-    );
-
-  await logProjectActivity(db, {
-    ownerId: session.user.id,
-    projectId: payload.projectId,
-    entityType: "project",
-    entityId: payload.projectId,
-    action: "updated",
-    label: "Updated project key",
-    detail: `${project.slug ?? "(none)"} → ${payload.slug}`,
-    createdAt: now,
-  });
+  await setProjectSlugService(viewer, payload);
 
   revalidateProjectViews(payload.projectId, {
     projects: true,
@@ -743,41 +575,10 @@ export async function setProjectSlugAction(formData: FormData) {
 }
 
 export async function setProjectColorAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = projectColorSchema.parse(toPayload(formData));
-  const db = getDb();
-  const now = new Date();
 
-  const project = await assertProjectOwnership(
-    payload.projectId,
-    session.user.id,
-  );
-
-  const nextColor = payload.color === "" ? null : payload.color;
-  if ((project.color ?? null) === nextColor) {
-    return;
-  }
-
-  await db
-    .update(projects)
-    .set({ color: nextColor, updatedAt: now })
-    .where(
-      and(
-        eq(projects.id, payload.projectId),
-        eq(projects.ownerId, session.user.id),
-      ),
-    );
-
-  await logProjectActivity(db, {
-    ownerId: session.user.id,
-    projectId: payload.projectId,
-    entityType: "project",
-    entityId: payload.projectId,
-    action: "updated",
-    label: "Updated project color",
-    detail: nextColor ?? "cleared",
-    createdAt: now,
-  });
+  await setProjectColorService(viewer, payload);
 
   revalidateProjectViews(payload.projectId, {
     projects: true,
@@ -791,30 +592,10 @@ export async function setProjectColorAction(formData: FormData) {
 }
 
 export async function archiveProjectAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = projectActionSchema.parse(toPayload(formData));
-  const db = getDb();
-  const project = await assertProjectOwnership(payload.projectId, session.user.id);
-  const now = new Date();
 
-  await db
-    .update(projects)
-    .set({
-      archivedAt: now,
-      updatedAt: now,
-    })
-    .where(eq(projects.id, payload.projectId));
-
-  await logProjectActivity(db, {
-    ownerId: session.user.id,
-    projectId: payload.projectId,
-    entityType: "project",
-    entityId: payload.projectId,
-    action: "archived",
-    label: "Archived project",
-    detail: project.name,
-    createdAt: now,
-  });
+  await archiveProjectService(viewer, payload);
 
   revalidateProjectViews(payload.projectId, {
     projects: true,
@@ -834,30 +615,10 @@ export async function archiveProjectAction(formData: FormData) {
 }
 
 export async function restoreProjectAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = projectActionSchema.parse(toPayload(formData));
-  const db = getDb();
-  const project = await assertProjectOwnership(payload.projectId, session.user.id);
-  const now = new Date();
 
-  await db
-    .update(projects)
-    .set({
-      archivedAt: null,
-      updatedAt: now,
-    })
-    .where(eq(projects.id, payload.projectId));
-
-  await logProjectActivity(db, {
-    ownerId: session.user.id,
-    projectId: payload.projectId,
-    entityType: "project",
-    entityId: payload.projectId,
-    action: "restored",
-    label: "Restored project",
-    detail: project.name,
-    createdAt: now,
-  });
+  await restoreProjectService(viewer, payload);
 
   revalidateProjectViews(payload.projectId, {
     projects: true,
@@ -876,39 +637,13 @@ export async function restoreProjectAction(formData: FormData) {
   );
 }
 
-// High-entropy, URL-safe token for the public client board (mirrors the
-// invite-token generator). 32 random bytes => 43-char base64url.
-function generateShareToken() {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return Buffer.from(bytes).toString("base64url");
-}
-
 export async function enableClientShareAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = projectActionSchema.parse(toPayload(formData));
-  const db = getDb();
-  const project = await assertProjectOwnership(payload.projectId, session.user.id);
-  const now = new Date();
 
-  // Generate a token on first enable; reuse the existing one on re-enable so a
-  // previously shared link keeps working.
-  const token = project.clientShareToken ?? generateShareToken();
-
-  await db
-    .update(projects)
-    .set({ clientShareEnabled: true, clientShareToken: token, updatedAt: now })
-    .where(eq(projects.id, payload.projectId));
-
-  await logProjectActivity(db, {
-    ownerId: session.user.id,
+  await setClientShareService(viewer, {
     projectId: payload.projectId,
-    entityType: "project",
-    entityId: payload.projectId,
-    action: "updated",
-    label: "Published client board",
-    detail: project.name,
-    createdAt: now,
+    enabled: true,
   });
 
   revalidateProjectViews(payload.projectId, { settings: true, clientBoard: true });
@@ -923,28 +658,12 @@ export async function enableClientShareAction(formData: FormData) {
 }
 
 export async function disableClientShareAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = projectActionSchema.parse(toPayload(formData));
-  const db = getDb();
-  const project = await assertProjectOwnership(payload.projectId, session.user.id);
-  const now = new Date();
 
-  // Keep the token so re-enabling restores the same link; flipping the flag is
-  // enough to take the board offline.
-  await db
-    .update(projects)
-    .set({ clientShareEnabled: false, updatedAt: now })
-    .where(eq(projects.id, payload.projectId));
-
-  await logProjectActivity(db, {
-    ownerId: session.user.id,
+  await setClientShareService(viewer, {
     projectId: payload.projectId,
-    entityType: "project",
-    entityId: payload.projectId,
-    action: "updated",
-    label: "Made client board private",
-    detail: project.name,
-    createdAt: now,
+    enabled: false,
   });
 
   revalidateProjectViews(payload.projectId, { settings: true, clientBoard: true });
@@ -959,28 +678,10 @@ export async function disableClientShareAction(formData: FormData) {
 }
 
 export async function rotateClientShareTokenAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = projectActionSchema.parse(toPayload(formData));
-  const db = getDb();
-  const project = await assertProjectOwnership(payload.projectId, session.user.id);
-  const now = new Date();
 
-  // A fresh token immediately invalidates the previous link.
-  await db
-    .update(projects)
-    .set({ clientShareToken: generateShareToken(), updatedAt: now })
-    .where(eq(projects.id, payload.projectId));
-
-  await logProjectActivity(db, {
-    ownerId: session.user.id,
-    projectId: payload.projectId,
-    entityType: "project",
-    entityId: payload.projectId,
-    action: "updated",
-    label: "Rotated client board link",
-    detail: project.name,
-    createdAt: now,
-  });
+  await rotateClientShareTokenService(viewer, payload);
 
   revalidateProjectViews(payload.projectId, { settings: true, clientBoard: true });
   if (payload.returnTo) {
@@ -994,205 +695,23 @@ export async function rotateClientShareTokenAction(formData: FormData) {
 }
 
 export async function duplicateProjectAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = projectActionSchema.parse(toPayload(formData));
-  const db = getDb();
-  const sourceProject = await assertProjectOwnership(
-    payload.projectId,
-    session.user.id,
+
+  const { projectId: newProjectId } = await duplicateProjectService(
+    viewer,
+    payload,
   );
-  const [sourceRequests, sourceTasks, sourceChecklistItems, sourceNote] =
-    await Promise.all([
-      db
-        .select()
-        .from(clientRequests)
-        .where(
-          and(
-            eq(clientRequests.projectId, payload.projectId),
-            eq(clientRequests.ownerId, session.user.id),
-          ),
-        )
-        .orderBy(desc(clientRequests.createdAt)),
-      db
-        .select()
-        .from(tasks)
-        .where(
-          and(
-            eq(tasks.projectId, payload.projectId),
-            eq(tasks.ownerId, session.user.id),
-          ),
-        )
-        .orderBy(desc(tasks.createdAt)),
-      db
-        .select()
-        .from(taskChecklistItems)
-        .where(
-          and(
-            eq(taskChecklistItems.projectId, payload.projectId),
-            eq(taskChecklistItems.ownerId, session.user.id),
-          ),
-        )
-        .orderBy(desc(taskChecklistItems.createdAt)),
-      db
-        .select()
-        .from(projectNotes)
-        .where(
-          and(
-            eq(projectNotes.projectId, payload.projectId),
-            eq(projectNotes.ownerId, session.user.id),
-          ),
-        )
-        .limit(1),
-    ]);
-
-  const now = new Date();
-  const newProjectId = crypto.randomUUID();
-  const newProjectName = `${sourceProject.name} copy`;
-  const newSlug = await resolveSlugForCreate(undefined, newProjectName);
-  const requestIdMap = new Map<string, string>();
-  const taskIdMap = new Map<string, string>();
-
-  await db.insert(projects).values({
-    id: newProjectId,
-    ownerId: session.user.id,
-    name: newProjectName,
-    slug: newSlug,
-    clientName: sourceProject.clientName,
-    summary: sourceProject.summary,
-    status: sourceProject.status,
-    deadline: sourceProject.deadline,
-    archivedAt: null,
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  // Re-number requests + tasks starting at 1 in the duplicate. Preserve
-  // source's created_at order so old codes (in titles, links, etc.) map
-  // predictably to new codes — oldest gets -1, next -2, etc.
-  if (sourceRequests.length) {
-    const orderedRequests = [...sourceRequests].sort(
-      (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
-    );
-    await db.insert(clientRequests).values(
-      orderedRequests.map((request, index) => {
-        const id = crypto.randomUUID();
-        requestIdMap.set(request.id, id);
-
-        return {
-          id,
-          ownerId: session.user.id,
-          projectId: newProjectId,
-          title: request.title,
-          description: request.description,
-          codeNumber: index + 1,
-          status: request.status,
-          priority: request.priority,
-          createdAt: now,
-          updatedAt: now,
-        };
-      }),
-    );
-  }
-
-  if (sourceTasks.length) {
-    const orderedTasks = [...sourceTasks].sort(
-      (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
-    );
-    await db.insert(tasks).values(
-      orderedTasks.map((task, index) => {
-        const id = crypto.randomUUID();
-        taskIdMap.set(task.id, id);
-
-        return {
-          id,
-          ownerId: session.user.id,
-          projectId: newProjectId,
-          requestId: task.requestId ? (requestIdMap.get(task.requestId) ?? null) : null,
-          title: task.title,
-          description: task.description,
-          codeNumber: index + 1,
-          categoryName: task.categoryName,
-          categoryColor: task.categoryColor,
-          phase: task.phase,
-          status: task.status,
-          priority: task.priority,
-          dueDate: task.dueDate,
-          sortOrder: task.sortOrder,
-          createdAt: now,
-          updatedAt: now,
-        };
-      }),
-    );
-  }
-
-  if (sourceChecklistItems.length) {
-    const duplicatedChecklistItems = sourceChecklistItems.flatMap((item) => {
-      const nextTaskId = taskIdMap.get(item.taskId);
-
-      if (!nextTaskId) {
-        return [];
-      }
-
-      return {
-        id: crypto.randomUUID(),
-        ownerId: session.user.id,
-        projectId: newProjectId,
-        taskId: nextTaskId,
-        content: item.content,
-        isCompleted: item.isCompleted,
-        completedAt: item.isCompleted ? item.completedAt : null,
-        sortOrder: item.sortOrder,
-        createdAt: now,
-        updatedAt: now,
-      };
-    });
-
-    if (duplicatedChecklistItems.length) {
-      await db.insert(taskChecklistItems).values(duplicatedChecklistItems);
-    }
-  }
-
-  if (sourceNote[0]) {
-    await db.insert(projectNotes).values({
-      id: crypto.randomUUID(),
-      ownerId: session.user.id,
-      projectId: newProjectId,
-      content: sourceNote[0].content,
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
-
-  await logProjectActivity(db, {
-    ownerId: session.user.id,
-    projectId: newProjectId,
-    entityType: "project",
-    entityId: newProjectId,
-    action: "duplicated",
-    label: "Duplicated workspace",
-    detail: sourceProject.name,
-    createdAt: now,
-  });
 
   revalidateWorkspaceCollections();
   redirect(withFlash(`/projects/${newProjectId}`, "project-duplicated"));
 }
 
 export async function deleteProjectAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = projectDeleteSchema.parse(toPayload(formData));
-  const db = getDb();
 
-  await assertProjectOwnership(payload.projectId, session.user.id);
-
-  await db
-    .delete(projects)
-    .where(
-      and(
-        eq(projects.id, payload.projectId),
-        eq(projects.ownerId, session.user.id),
-      ),
-    );
+  await deleteProjectService(viewer, payload);
 
   revalidateWorkspaceCollections();
   redirect(withFlash("/projects", "project-deleted"));

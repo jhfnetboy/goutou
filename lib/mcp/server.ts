@@ -24,6 +24,37 @@ import {
   updateChecklistItemInputSchema,
 } from "@/lib/services/checklist";
 import {
+  addProjectMember,
+  addProjectMemberInputSchema,
+  createInvite,
+  createInviteInputSchema,
+  listInvites,
+  listProjectMembers,
+  listProjectMembersInputSchema,
+  removeProjectMember,
+  removeProjectMemberInputSchema,
+  revokeInvite,
+  revokeInviteInputSchema,
+} from "@/lib/services/members";
+import {
+  archiveProject,
+  createProject,
+  createProjectInputSchema,
+  deleteProject,
+  duplicateProject,
+  projectIdInputSchema,
+  restoreProject,
+  rotateClientShareToken,
+  setClientShare,
+  setClientShareInputSchema,
+  setProjectColor,
+  setProjectColorInputSchema,
+  setProjectSlug,
+  setProjectSlugInputSchema,
+  updateProject,
+  updateProjectInputSchema,
+} from "@/lib/services/projects";
+import {
   listDailyTasks,
   listProjectActivity,
   listProjects,
@@ -430,7 +461,259 @@ function registerWriteTools(server: McpServer, viewer: Viewer) {
     async (args) => runWrite(() => deleteRequest(viewer, args)),
   );
 
-  // Phase 5+ (deferred): project & daily-task write tools — pending the
-  // lib/services/projects.ts and daily.ts extraction. Admin-tier tools would
-  // gate on isAdminTier(viewer.role).
+  // --- Projects -------------------------------------------------------------
+  // Settings/lifecycle tools are owner-gated in the service (lib/services/
+  // projects.ts), identical to the web app — a token never exceeds the caller's
+  // own access.
+
+  server.registerTool(
+    "create-project",
+    {
+      title: "Create project",
+      description:
+        "Create a new project; you become its owner. CONFIRM the name and details with the user first — this writes to their workspace. The key/slug is auto-derived from the name if omitted. Returns the new projectId.",
+      inputSchema: createProjectInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+      },
+    },
+    async (args) => runWrite(() => createProject(viewer, args)),
+  );
+
+  server.registerTool(
+    "update-project",
+    {
+      title: "Update project",
+      description:
+        "Update a project's core details (name, client, summary, status, deadline). REPLACES those fields — read the project first and pass the full set, or omitted optional fields are cleared. Owner only. CONFIRM with the user. Slug and color have their own tools.",
+      inputSchema: updateProjectInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => updateProject(viewer, args)),
+  );
+
+  server.registerTool(
+    "set-project-key",
+    {
+      title: "Set project key",
+      description:
+        "Set a project's key/slug (2-10 uppercase letters or numbers), used in task and request codes. Must be unique across projects. Owner only. CONFIRM — existing codes re-render with the new key.",
+      inputSchema: setProjectSlugInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => setProjectSlug(viewer, args)),
+  );
+
+  server.registerTool(
+    "set-project-color",
+    {
+      title: "Set project color",
+      description:
+        "Set or clear a project's color swatch (pass an empty string to clear). Owner only.",
+      inputSchema: setProjectColorInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => setProjectColor(viewer, args)),
+  );
+
+  server.registerTool(
+    "archive-project",
+    {
+      title: "Archive project",
+      description:
+        "Archive a project — reversible; it's hidden from active lists but kept. Owner only. CONFIRM with the user.",
+      inputSchema: projectIdInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => archiveProject(viewer, args)),
+  );
+
+  server.registerTool(
+    "restore-project",
+    {
+      title: "Restore project",
+      description: "Restore a previously archived project. Owner only.",
+      inputSchema: projectIdInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => restoreProject(viewer, args)),
+  );
+
+  server.registerTool(
+    "duplicate-project",
+    {
+      title: "Duplicate project",
+      description:
+        "Duplicate a project, copying its requests, tasks, subtasks, and notes into a new '… copy' workspace you own. Owner only. CONFIRM with the user. Returns the new projectId.",
+      inputSchema: projectIdInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+      },
+    },
+    async (args) => runWrite(() => duplicateProject(viewer, args)),
+  );
+
+  server.registerTool(
+    "delete-project",
+    {
+      title: "Delete project",
+      description:
+        "PERMANENTLY delete a project and everything in it (tasks, requests, notes, members) via cascade. Owner only. This CANNOT be undone — CONFIRM explicitly with the user, and prefer archive-project unless they truly want it erased.",
+      inputSchema: projectIdInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => deleteProject(viewer, args)),
+  );
+
+  server.registerTool(
+    "set-client-board",
+    {
+      title: "Set client board sharing",
+      description:
+        "Publish (enabled=true) or unpublish (enabled=false) a project's public client board. Publishing returns a shareable clientBoardPath. Owner only. CONFIRM — publishing exposes a read-only board to anyone with the link.",
+      inputSchema: setClientShareInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => setClientShare(viewer, args)),
+  );
+
+  server.registerTool(
+    "rotate-client-board-link",
+    {
+      title: "Rotate client board link",
+      description:
+        "Generate a fresh public client-board link, immediately invalidating the previous one. Owner only. CONFIRM with the user.",
+      inputSchema: projectIdInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+      },
+    },
+    async (args) => runWrite(() => rotateClientShareToken(viewer, args)),
+  );
+
+  // --- Members --------------------------------------------------------------
+
+  server.registerTool(
+    "list-project-members",
+    {
+      title: "List project members",
+      description:
+        "List a project's owner and members (id, name, email, role). Handy for resolving a userId before assigning a task or removing someone.",
+      inputSchema: listProjectMembersInputSchema.shape,
+      annotations: { readOnlyHint: true },
+    },
+    async (args) => runWrite(() => listProjectMembers(viewer, args)),
+  );
+
+  server.registerTool(
+    "add-project-member",
+    {
+      title: "Add project member",
+      description:
+        "Add an EXISTING workspace user to a project, by email or userId. They must already have an account — use create-invite first for someone brand new. Project owner or workspace admin only. CONFIRM with the user.",
+      inputSchema: addProjectMemberInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => addProjectMember(viewer, args)),
+  );
+
+  server.registerTool(
+    "remove-project-member",
+    {
+      title: "Remove project member",
+      description:
+        "Remove a member from a project by userId (does not delete their account). Project owner or workspace admin only. CONFIRM with the user.",
+      inputSchema: removeProjectMemberInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => removeProjectMember(viewer, args)),
+  );
+
+  // --- Workspace invitations ------------------------------------------------
+
+  server.registerTool(
+    "create-invite",
+    {
+      title: "Create workspace invite",
+      description:
+        "Create an invitation so a new person can register and join the workspace with a role (member; admin is owners-only; owners can't be invited). Workspace owner/admin only. Returns a token and acceptPath — share <your-domain><acceptPath> with the invitee. CONFIRM with the user.",
+      inputSchema: createInviteInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+      },
+    },
+    async (args) => runWrite(() => createInvite(viewer, args)),
+  );
+
+  server.registerTool(
+    "list-invites",
+    {
+      title: "List workspace invites",
+      description:
+        "List workspace invitations with their status (pending / accepted / expired). Workspace owner/admin only.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    async () => runWrite(() => listInvites(viewer)),
+  );
+
+  server.registerTool(
+    "revoke-invite",
+    {
+      title: "Revoke workspace invite",
+      description:
+        "Revoke (delete) a workspace invitation by id, invalidating its link. Workspace owner/admin only. CONFIRM with the user.",
+      inputSchema: revokeInviteInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => revokeInvite(viewer, args)),
+  );
 }
