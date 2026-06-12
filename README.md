@@ -146,6 +146,11 @@ Onboarding is **invite-only**, with a single bootstrap exception:
   invite flow. There is no open registration.
 - **Google sign-in** appears automatically when the OAuth env vars are present,
   and only signs into already-provisioned accounts (no self-provisioning).
+  On the Google OAuth client, register
+  `<BETTER_AUTH_URL>/api/auth/callback/google` under **Authorized redirect
+  URIs** — the match is exact (scheme, host, full path, no trailing slash) and
+  the "JavaScript origins" field doesn't count, otherwise Google rejects the
+  flow with `Error 400: redirect_uri_mismatch`.
 - **Multiple hostnames.** Auth requests are origin-checked against
   `BETTER_AUTH_URL` (the canonical base URL) plus `localhost`. If the app is
   reachable at more than one hostname — e.g. both a `*.workers.dev` URL and a
