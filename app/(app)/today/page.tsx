@@ -8,6 +8,7 @@ import {
 } from "@phosphor-icons/react/dist/ssr";
 
 import { ActivityFeed } from "@/components/projects/activity-feed";
+import { ProjectColorBadge } from "@/components/projects/project-color-badge";
 import { requireSession } from "@/lib/auth-server";
 import {
   getDailyTasksForUser,
@@ -129,7 +130,10 @@ function TaskSection({
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-2">
                   <div className="flex flex-wrap gap-1.5">
-                    <span className="ui-badge">{task.projectName}</span>
+                    <ProjectColorBadge
+                      name={task.projectName}
+                      color={task.projectColor}
+                    />
                     <span className="ui-badge">{task.status}</span>
                   </div>
                   <div>
@@ -208,9 +212,10 @@ function UnifiedTodaySection({ items }: { items: UnifiedTodayItem[] }) {
                   <div className="min-w-0 space-y-2">
                     <div className="flex flex-wrap items-center gap-1.5">
                       {item.isProject ? (
-                        <span className="inline-flex max-w-full items-center truncate rounded-sm border border-accent/30 bg-accent-soft px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-[0.04em] text-accent">
-                          {item.kindLabel}
-                        </span>
+                        <ProjectColorBadge
+                          name={item.kindLabel}
+                          color={item.projectColor}
+                        />
                       ) : (
                         <span className="ui-badge">{item.kindLabel}</span>
                       )}
@@ -325,7 +330,7 @@ export default async function TodayPage() {
     status: task.status,
     kindLabel: task.projectName,
     isProject: true,
-    projectColor: null,
+    projectColor: task.projectColor,
     code: task.code,
     href: task.href,
     dueLabel: formatDateLabel(task.dueDate),

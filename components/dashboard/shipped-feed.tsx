@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Megaphone } from "@phosphor-icons/react/dist/ssr";
 
+import { ProjectColorBadge } from "@/components/projects/project-color-badge";
 import type { DashboardData } from "@/lib/data";
 
 function getStartOfWeek(value: Date) {
@@ -78,7 +79,10 @@ export function ShippedFeed({ data }: { data: DashboardData["shippedFeed"] }) {
                 className="group rounded-md border border-border bg-surface px-4 py-3 transition hover:border-border-strong hover:bg-surface-strong"
               >
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="ui-badge">{entry.projectName}</span>
+                  <ProjectColorBadge
+                    name={entry.projectName}
+                    color={entry.projectColor}
+                  />
                   <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-foreground">
                     {entry.taskTitle}
                   </span>

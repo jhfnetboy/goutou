@@ -1347,6 +1347,7 @@ export async function getTodayViewForUser(userId: string) {
       return {
         ...task,
         projectName: project.name,
+        projectColor: project.color ?? null,
         projectStatus: project.status,
         code: formatTaskCode(project.slug, task.codeNumber),
         href: getTaskHref(task.projectId, task.id),
@@ -1547,6 +1548,9 @@ export function computeDashboard(
   const projectsWithStats = buildProjectStats(allProjects, requestsForOwner, tasksForOwner);
   const openProjects = projectsWithStats.filter((project) => !project.archivedAt);
   const projectNameById = new Map(allProjects.map((project) => [project.id, project.name]));
+  const projectColorById = new Map(
+    allProjects.map((project) => [project.id, project.color ?? null]),
+  );
 
   const now = new Date();
   const today = getStartOfDay(now);
@@ -1684,6 +1688,7 @@ export function computeDashboard(
       summary: update.summary,
       projectId: update.projectId,
       projectName: projectNameById.get(update.projectId) ?? "Unknown project",
+      projectColor: projectColorById.get(update.projectId) ?? null,
       createdAt: update.createdAt,
       href: getTaskStatusUpdateHref(update.projectId, update.taskId),
     }));
