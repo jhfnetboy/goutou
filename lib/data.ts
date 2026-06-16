@@ -1303,7 +1303,12 @@ export async function getNotificationsForUser(userId: string) {
     readMap,
   );
 
-  return sortNotificationItems([...computed, ...stored]);
+  // Only surface unread items. Read = cleared/handled: stored ones were deleted,
+  // computed ones carry a read-ledger entry — either way they should stay gone
+  // after a refresh rather than reappear greyed.
+  return sortNotificationItems(
+    [...computed, ...stored].filter((item) => !item.readAt),
+  );
 }
 
 /**
