@@ -5,8 +5,10 @@ import { requireViewer } from "@/lib/auth-server";
 import { getDb } from "@/lib/db";
 import { personalAccessToken } from "@/lib/db/schema";
 
-// Soft-revoke (set revoked_at) one of the viewer's own tokens. Soft, not delete,
-// so last_used_at survives for the user's own audit. Idempotent.
+// Revoke = hard-delete one of the viewer's own tokens. The row is removed
+// entirely rather than soft-flagged with revoked_at, so revoked tokens don't
+// linger in the list. Verification (lib/auth-token) then fails on "not found".
+// Idempotent: revoking an already-deleted token still returns ok.
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ tokenId: string }> },
@@ -19,7 +21,6 @@ export async function POST(
     .select({
       id: personalAccessToken.id,
       userId: personalAccessToken.userId,
-      revokedAt: personalAccessToken.revokedAt,
     })
     .from(personalAccessToken)
     .where(eq(personalAccessToken.id, tokenId))
@@ -30,13 +31,9 @@ export async function POST(
     return Response.json({ error: "Not found" }, { status: 404 });
   }
 
-  if (!token.revokedAt) {
-    const now = new Date();
-    await db
-      .update(personalAccessToken)
-      .set({ revokedAt: now, updatedAt: now })
-      .where(eq(personalAccessToken.id, tokenId));
-  }
+  await db
+    .delete(personalAccessToken)
+    .where(eq(personalAccessToken.id, tokenId));
 
   revalidatePath("/settings/tokens");
   return Response.json({ ok: true });

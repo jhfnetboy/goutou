@@ -63,7 +63,7 @@ export function TokenManager({ tokens }: { tokens: TokenListItem[] }) {
         error?: string;
       };
       if (!response.ok) throw new Error(data.error || "Revoke failed");
-      toast("Token revoked", "success");
+      toast("Token revoked and deleted", "success");
       startTransition(() => router.refresh());
     } catch (error) {
       toast(error instanceof Error ? error.message : "Revoke failed", "danger");
@@ -207,7 +207,7 @@ export function TokenManager({ tokens }: { tokens: TokenListItem[] }) {
       <ConfirmDialog
         open={Boolean(revoking)}
         title={`Revoke ${revoking?.name ?? "token"}?`}
-        description="Any client using this token loses access immediately. This can't be undone — you'd create a new token to reconnect."
+        description="Any client using this token loses access immediately, and the token is permanently deleted — it won't be kept in the list. Create a new token to reconnect."
         confirmLabel="Revoke"
         cancelLabel="Keep"
         variant="danger"

@@ -392,7 +392,7 @@ const fakeHash = (seed: string) => createHash("sha256").update(seed).digest("hex
 const pats = [
   { id: "pat-1", name: "Claude Desktop", scope: "readwrite", prefix: "seed_pat_kQ9fA2", last: ms(-1), exp: null, rev: null, created: ms(-10) },
   { id: "pat-2", name: "Read-only CI", scope: "read", prefix: "seed_pat_R3dz8M", last: ms(-3), exp: ms(60), rev: null, created: ms(-20) },
-  { id: "pat-3", name: "Old laptop", scope: "readwrite", prefix: "seed_pat_zX1bW7", last: ms(-40), exp: null, rev: ms(-15), created: ms(-50) },
+  { id: "pat-3", name: "Old laptop", scope: "readwrite", prefix: "seed_pat_zX1bW7", last: ms(-40), exp: ms(-5), rev: null, created: ms(-50) },
 ];
 insert(
   "personal_access_token",
