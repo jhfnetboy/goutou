@@ -30,14 +30,17 @@ import { ThemeToggle } from "@/components/app/theme-toggle";
 import { Avatar } from "@/components/ui/avatar";
 import { ChangePasswordForm } from "@/components/auth/change-password-form";
 import { SignOutButton } from "@/components/auth/sign-out-button";
-import { markNotificationReadAction } from "@/lib/actions";
+import {
+  clearAllNotificationsAction,
+  markNotificationReadAction,
+} from "@/lib/actions";
 import type {
   InAppNotificationItem,
   ProjectListItem,
 } from "@/lib/data";
 import type { UserRole } from "@/lib/db/schema";
 import { formatProjectStatus } from "@/lib/project-status";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 type AppSidebarProps = {
   notificationCount: number;
@@ -217,6 +220,20 @@ export function AppSidebar({
     setNotifications(null);
     setNotificationsError(null);
     setIsNotificationsOpen(true);
+  };
+  const hasAnyNotifications = (notifications?.length ?? 0) > 0;
+  const clearAllNotifications = () => {
+    // Computed (derived) ids the server can't enumerate on its own — pass them
+    // so it can suppress each via the read ledger; stored rows it deletes.
+    const computedIds = (notifications ?? [])
+      .filter((notification) => !notification.id.startsWith("stored-"))
+      .map((notification) => notification.id);
+    // Optimistic: empty the list and zero the badge immediately.
+    setNotifications([]);
+    setLiveNotificationCount(0);
+    const formData = new FormData();
+    formData.set("computedIds", computedIds.join(","));
+    void clearAllNotificationsAction(formData);
   };
 
   return (
@@ -697,14 +714,25 @@ export function AppSidebar({
                     Requests, deadlines, and completed tasks that still need a public update.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsNotificationsOpen(false)}
-                  className="inline-flex size-9 items-center justify-center rounded-md border border-border bg-surface text-muted transition hover:border-border-strong hover:bg-surface-strong hover:text-foreground"
-                >
-                  <X className="size-4" />
-                  <span className="sr-only">Close notifications</span>
-                </button>
+                <div className="flex shrink-0 items-center gap-2">
+                  {hasAnyNotifications ? (
+                    <button
+                      type="button"
+                      onClick={clearAllNotifications}
+                      className="inline-flex h-9 items-center rounded-md border border-border bg-surface px-3 text-[12px] font-medium text-muted transition hover:border-danger/40 hover:bg-danger/10 hover:text-danger"
+                    >
+                      Clear all
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => setIsNotificationsOpen(false)}
+                    className="inline-flex size-9 items-center justify-center rounded-md border border-border bg-surface text-muted transition hover:border-border-strong hover:bg-surface-strong hover:text-foreground"
+                  >
+                    <X className="size-4" />
+                    <span className="sr-only">Close notifications</span>
+                  </button>
+                </div>
               </div>
 
               <div className="max-h-[70dvh] overflow-y-auto p-3 sm:p-4">
@@ -782,7 +810,7 @@ export function AppSidebar({
                                 {notification.projectName}
                               </p>
                               <p className="mt-1 font-mono text-[11px] text-muted">
-                                {notification.createdAt.toLocaleDateString()}
+                                {formatDate(notification.createdAt)}
                               </p>
                             </div>
                           </div>

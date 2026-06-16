@@ -6,6 +6,7 @@ import { CalendarDots, CheckSquare, Square, X } from "@phosphor-icons/react";
 
 import RichTextRenderer from "@/components/rich-text/rich-text-renderer";
 import type { BoardTask } from "@/components/projects/kanban-board";
+import { formatDate } from "@/lib/utils";
 
 export type ClientSubtask = {
   id: string;
@@ -76,7 +77,7 @@ export function ClientTaskModal({
   if (!task) return null;
   if (typeof document === "undefined") return null;
 
-  const due = task.dueDate ? new Date(task.dueDate).toLocaleDateString() : "—";
+  const due = formatDate(task.dueDate);
   const doneCount = task.subtasks.filter((item) => item.isCompleted).length;
 
   return createPortal(

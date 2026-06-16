@@ -1842,6 +1842,41 @@ export async function markNotificationReadAction(formData: FormData) {
     });
 }
 
+// Clear all of the viewer's notifications at once. Stored notifications are
+// deleted outright; computed ones are live-derived (no row to delete), so the
+// client passes their derived ids and we suppress them via the read ledger.
+// Idempotent.
+export async function clearAllNotificationsAction(formData: FormData) {
+  const viewer = await requireViewer();
+  const db = getDb();
+  const now = new Date();
+
+  await db
+    .delete(notifications)
+    .where(eq(notifications.recipientId, viewer.id));
+
+  const computedIds = String(formData.get("computedIds") ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0 && !id.startsWith("stored-"));
+
+  if (computedIds.length) {
+    await db
+      .insert(notificationReads)
+      .values(
+        computedIds.map((notificationId) => ({
+          id: crypto.randomUUID(),
+          userId: viewer.id,
+          notificationId,
+          readAt: now,
+        })),
+      )
+      .onConflictDoNothing({
+        target: [notificationReads.userId, notificationReads.notificationId],
+      });
+  }
+}
+
 /* ---------------------------------------------------------------------------
  * Daily Ops — per-user, per-day planned work items.
  * ------------------------------------------------------------------------ */

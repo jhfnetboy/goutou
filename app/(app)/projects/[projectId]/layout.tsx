@@ -9,7 +9,7 @@ import { requireViewer } from "@/lib/auth-server";
 import { getProjectForUser } from "@/lib/data";
 import { serverEnv } from "@/lib/env";
 import { formatProjectStatus } from "@/lib/project-status";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 type ProjectLayoutProps = {
   children: React.ReactNode;
@@ -90,9 +90,7 @@ export default async function ProjectLayout({
               </div>
               <div className="inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.04em] text-muted">
                 <CalendarDots className="size-3.5" />
-                {project.deadline
-                  ? project.deadline.toLocaleDateString()
-                  : "No deadline set"}
+                {formatDate(project.deadline, "No deadline set")}
               </div>
             </div>
           </div>

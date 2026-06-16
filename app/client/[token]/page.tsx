@@ -13,6 +13,7 @@ import {
 import { ThemeToggle } from "@/components/app/theme-toggle";
 import { getPublicProjectBoard } from "@/lib/data";
 import { formatProjectStatus } from "@/lib/project-status";
+import { formatDate } from "@/lib/utils";
 
 // A shared board is a capability URL — keep it out of search indexes even if
 // the link ever lands on a crawlable page.
@@ -21,24 +22,11 @@ export const metadata = {
 };
 
 function formatDateLabel(value: Date | null) {
-  if (!value) {
-    return "No deadline set";
-  }
-
-  return value.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatDate(value, "No deadline set");
 }
 
 function formatDayLabel(value: Date) {
-  return value.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatDate(value);
 }
 
 function getDayKey(value: Date) {
@@ -147,7 +135,7 @@ export default async function ClientProjectBoardPage({
               ) : null}
               <div className="inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.04em] text-muted">
                 <CalendarDots className="size-3.5" />
-                Updated {publicBoard.project.updatedAt.toLocaleDateString()}
+                Updated {formatDate(publicBoard.project.updatedAt)}
               </div>
             </div>
           </div>

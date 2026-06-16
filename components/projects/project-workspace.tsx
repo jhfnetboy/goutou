@@ -13,6 +13,10 @@ import { LabelManager } from "@/components/projects/label-manager";
 import { KanbanBoard } from "@/components/projects/kanban-board";
 import { ProjectColorPicker } from "@/components/projects/project-color-picker";
 import { ProjectNotesPanel } from "@/components/projects/project-notes-panel";
+import {
+  SettingsSearch,
+  SettingsSection,
+} from "@/components/projects/settings-search";
 import { ProjectSlugForm } from "@/components/projects/project-slug-form";
 import { formatRequestCode, formatTaskCode } from "@/lib/codes";
 import { formatProjectStatus } from "@/lib/project-status";
@@ -29,7 +33,7 @@ import {
 } from "@/lib/actions";
 import type { ProjectWorkspace } from "@/lib/data";
 import { serverEnv } from "@/lib/env";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 const badgeClassNames = {
   active: "border-border bg-surface text-foreground",
@@ -49,15 +53,7 @@ const badgeClassNames = {
 } as const;
 
 function formatDateLabel(value: Date | null) {
-  if (!value) {
-    return "No deadline";
-  }
-
-  return value.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatDate(value, "No deadline");
 }
 
 function countTasksByStatus(workspace: ProjectWorkspace) {
@@ -228,6 +224,12 @@ export function ProjectBoardSurface({
         showFilters={!preview}
         previewLimit={preview ? 5 : undefined}
         showMoreHref={preview ? boardPath : undefined}
+        compactCards={preview}
+        allLabels={workspace.labels.map((label) => ({
+          id: label.id,
+          name: label.name,
+          color: label.color,
+        }))}
         tasks={workspace.tasks.map((task) => {
           const assignee = workspace.members.find(
             (m) => m.userId === task.assigneeId,
@@ -442,23 +444,22 @@ export function ProjectSettingsSurface({
   ];
 
   return (
-    <div className="grid gap-6">
-      <SectionFrame>
-        <SectionHeader
-          eyebrow="Settings"
-          title="Project configuration"
-          description="Keep core project metadata separate from the execution surface."
-          action={
-            <ProjectWorkspaceModalTrigger
-              modal="project"
-              className="ui-button-secondary"
-            >
-              <SlidersHorizontal className="size-4" />
-              Edit project
-            </ProjectWorkspaceModalTrigger>
-          }
-        />
-
+    <SettingsSearch>
+      <SettingsSection
+        eyebrow="Settings"
+        title="Project configuration"
+        description="Keep core project metadata separate from the execution surface."
+        keywords="edit details metadata name status client deadline summary"
+        action={
+          <ProjectWorkspaceModalTrigger
+            modal="project"
+            className="ui-button-secondary"
+          >
+            <SlidersHorizontal className="size-4" />
+            Edit project
+          </ProjectWorkspaceModalTrigger>
+        }
+      >
         <div className="grid gap-4 lg:grid-cols-2">
           {stats.map((stat) => (
             <div
@@ -472,40 +473,40 @@ export function ProjectSettingsSurface({
             </div>
           ))}
         </div>
-      </SectionFrame>
+      </SettingsSection>
 
-      <SectionFrame>
-        <SectionHeader
-          eyebrow="Identity"
-          title="Project key"
-          description="Short code that prefixes every task (LFMS-50) and client request (LFMS-CR-3). Auto-derived at creation; rename with care."
-        />
+      <SettingsSection
+        eyebrow="Identity"
+        title="Project key"
+        description="Short code that prefixes every task (LFMS-50) and client request (LFMS-CR-3). Auto-derived at creation; rename with care."
+        keywords="slug code prefix url"
+      >
         <ProjectSlugForm
           projectId={workspace.project.id}
           currentSlug={workspace.project.slug}
           returnTo={currentPath}
         />
-      </SectionFrame>
+      </SettingsSection>
 
-      <SectionFrame>
-        <SectionHeader
-          eyebrow="Branding"
-          title="Project color"
-          description="Picks a soft tint for this project across the sidebar, search, and projects list. Leave empty for neutral."
-        />
+      <SettingsSection
+        eyebrow="Branding"
+        title="Project color"
+        description="Picks a soft tint for this project across the sidebar, search, and projects list. Leave empty for neutral."
+        keywords="accent tint theme swatch branding"
+      >
         <ProjectColorPicker
           projectId={workspace.project.id}
           currentColor={workspace.project.color}
           returnTo={currentPath}
         />
-      </SectionFrame>
+      </SettingsSection>
 
-      <SectionFrame>
-        <SectionHeader
-          eyebrow="Taxonomy"
-          title="Task categories"
-          description="Reusable labels and card tints. Rename or recolor anywhere and every linked task picks it up. Deleting requires zero linked tasks."
-        />
+      <SettingsSection
+        eyebrow="Taxonomy"
+        title="Task categories"
+        description="Reusable labels and card tints. Rename or recolor anywhere and every linked task picks it up. Deleting requires zero linked tasks."
+        keywords="category categories tag tint color"
+      >
         <CategoryManager
           categories={workspace.categories.map((category) => ({
             id: category.id,
@@ -516,14 +517,14 @@ export function ProjectSettingsSurface({
             ).length,
           }))}
         />
-      </SectionFrame>
+      </SettingsSection>
 
-      <SectionFrame>
-        <SectionHeader
-          eyebrow="Taxonomy"
-          title="Task labels"
-          description="Multi-assign tags for tasks — a task can carry several. Independent of categories; assign them from the task modal. Deleting a label untags it everywhere."
-        />
+      <SettingsSection
+        eyebrow="Taxonomy"
+        title="Task labels"
+        description="Multi-assign tags for tasks — a task can carry several. Independent of categories; assign them from the task modal. Deleting a label untags it everywhere."
+        keywords="label labels tag tags"
+      >
         <LabelManager
           projectId={workspace.project.id}
           labels={workspace.labels.map((label) => ({
@@ -535,15 +536,14 @@ export function ProjectSettingsSurface({
             ).length,
           }))}
         />
-      </SectionFrame>
+      </SettingsSection>
 
-      <SectionFrame>
-        <SectionHeader
-          eyebrow="Actions"
-          title="Workspace actions"
-          description="Use these when the project needs to move out of the main list, spin into a copy, or leave the app entirely."
-        />
-
+      <SettingsSection
+        eyebrow="Actions"
+        title="Workspace actions"
+        description="Use these when the project needs to move out of the main list, spin into a copy, or leave the app entirely."
+        keywords="duplicate archive restore delete publish client board public link rotate make private danger"
+      >
         <div className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-4">
           <div className="flex h-full flex-col rounded-md border border-border bg-surface px-4 py-4">
             <p className="font-mono text-[11px] font-medium uppercase tracking-[0.04em] text-muted">
@@ -691,15 +691,15 @@ export function ProjectSettingsSurface({
             </ProjectWorkspaceModalTrigger>
           </div>
         </div>
-      </SectionFrame>
+      </SettingsSection>
 
       {shareEnabled ? (
-        <SectionFrame>
-          <SectionHeader
-            eyebrow="Client view"
-            title="Public view options"
-            description="Choose what clients see on the shared board link. Hidden sections never reach the public page."
-          />
+        <SettingsSection
+          eyebrow="Client view"
+          title="Public view options"
+          description="Choose what clients see on the shared board link. Hidden sections never reach the public page."
+          keywords="public view show hide board description commit changes toggle visibility client"
+        >
           <form action={setClientShareVisibilityAction} className="space-y-3">
             <input type="hidden" name="projectId" value={workspace.project.id} />
             <input type="hidden" name="returnTo" value={currentPath} />
@@ -727,9 +727,9 @@ export function ProjectSettingsSurface({
               </button>
             </div>
           </form>
-        </SectionFrame>
+        </SettingsSection>
       ) : null}
-    </div>
+    </SettingsSearch>
   );
 }
 

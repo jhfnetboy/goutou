@@ -33,7 +33,7 @@ export function LabelManager({
   const target = labels.find((l) => l.id === confirmDeleteId);
 
   return (
-    <>
+    <div className="space-y-3">
       <LabelCreateForm projectId={projectId} />
 
       {labels.length === 0 ? (
@@ -98,7 +98,7 @@ export function LabelManager({
       {target ? (
         <DeleteLabelDialog label={target} onClose={() => setConfirmDeleteId(null)} />
       ) : null}
-    </>
+    </div>
   );
 }
 
@@ -129,7 +129,7 @@ function LabelCreateForm({ projectId }: { projectId: string }) {
   }
 
   return (
-    <div className="grid gap-2 rounded-md border border-border bg-surface p-3">
+    <div className="grid gap-4 rounded-md border border-border bg-surface p-4">
       <div className="flex items-center gap-2">
         <input
           value={name}
@@ -158,26 +158,30 @@ function LabelCreateForm({ projectId }: { projectId: string }) {
           Add
         </button>
       </div>
-      <div className="flex flex-wrap gap-1">
-        {PROJECT_SWATCHES.map((swatch) => {
-          const isSelected = swatch.value.toLowerCase() === color.toLowerCase();
-          return (
-            <button
-              key={swatch.value}
-              type="button"
-              onClick={() => setColor(swatch.value)}
-              aria-label={swatch.label}
-              aria-pressed={isSelected}
-              className={cn(
-                "size-6 rounded-md border transition",
-                isSelected
-                  ? "border-foreground"
-                  : "border-border hover:border-border-strong",
-              )}
-              style={{ backgroundColor: swatch.value }}
-            />
-          );
-        })}
+      <div className="grid gap-2 border-t border-border pt-4">
+        <span className="text-[12px] font-medium text-foreground">Color</span>
+        <div className="flex flex-wrap gap-1.5">
+          {PROJECT_SWATCHES.map((swatch) => {
+            const isSelected =
+              swatch.value.toLowerCase() === color.toLowerCase();
+            return (
+              <button
+                key={swatch.value}
+                type="button"
+                onClick={() => setColor(swatch.value)}
+                aria-label={swatch.label}
+                aria-pressed={isSelected}
+                className={cn(
+                  "size-6 rounded-md border transition",
+                  isSelected
+                    ? "border-foreground"
+                    : "border-border hover:border-border-strong",
+                )}
+                style={{ backgroundColor: swatch.value }}
+              />
+            );
+          })}
+        </div>
       </div>
     </div>
   );

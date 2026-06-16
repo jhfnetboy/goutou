@@ -17,7 +17,7 @@ import {
 } from "@/lib/data";
 import { addDays, formatDateKey, startOfDay } from "@/lib/daily";
 import { parseRichText, richTextToPlainText } from "@/lib/rich-text";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 const statusBadgeTone: Record<"todo" | "doing" | "done", string> = {
   todo: "border-border bg-surface text-muted",
@@ -44,15 +44,7 @@ type UnifiedTodayItem = {
 };
 
 function formatDateLabel(value: Date | null) {
-  if (!value) {
-    return "No due date";
-  }
-
-  return value.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatDate(value, "No due date");
 }
 
 function formatDueState(task: TodayView["overdue"][number]) {

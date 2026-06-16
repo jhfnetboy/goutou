@@ -36,7 +36,7 @@ import { useOptionalProjectWorkspaceUi } from "@/components/projects/project-wor
 import { SearchSelect } from "@/components/ui/search-select";
 import { parseRichText, richTextToPlainText } from "@/lib/rich-text";
 import { toast } from "@/lib/toast";
-import { cn, withSearchParams } from "@/lib/utils";
+import { cn, formatDate, withSearchParams } from "@/lib/utils";
 
 const UNTAGGED_PHASE_VALUE = "__untagged__";
 
@@ -73,19 +73,13 @@ const statusLabel: Record<TaskStatus, string> = {
   done: "done",
 };
 
-// Compact "entered this column on" date for the line above a card's title.
+// "Entered this column on" date for the line above a card's title (dd/mm/yyyy).
 function formatEnteredLabel(iso: string | null | undefined) {
   if (!iso) return null;
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return null;
-  return {
-    short: date.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
-    full: date.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }),
-  };
+  const value = formatDate(date);
+  return { short: value, full: value };
 }
 
 type KanbanBoardProps = {
@@ -107,6 +101,11 @@ type KanbanBoardProps = {
   // Cap each column to ~5 cards' height and scroll the overflow in place
   // (public board) rather than paging with a "Show more" button.
   scrollColumns?: boolean;
+  // The project's full label set — so the Label filter lists every label, even
+  // ones not yet assigned to a task.
+  allLabels?: { id: string; name: string; color: string }[];
+  // Render minimal title-only cards (the compact overview "Execution board").
+  compactCards?: boolean;
 };
 
 type TaskColumns = Record<TaskStatus, BoardTask[]>;
@@ -153,16 +152,6 @@ function groupTasks(tasks: BoardTask[]): TaskColumns {
 
 const NONE_VALUE = "__none__";
 
-type DueBucket = "overdue" | "today" | "week" | "has" | "none";
-
-const DUE_BUCKET_LABEL: Record<DueBucket, string> = {
-  overdue: "Overdue",
-  today: "Due today",
-  week: "Due this week",
-  has: "Has a due date",
-  none: "No due date",
-};
-
 export type BoardFilterState = {
   search: string;
   phase?: string;
@@ -170,7 +159,11 @@ export type BoardFilterState = {
   priority?: string;
   label?: string;
   assignee?: string;
-  due?: string;
+  // Due-date range (yyyy-mm-dd). Either bound is optional: set only `dueFrom`
+  // for "due on/after", only `dueTo` for "due on/before", both for a range, or
+  // both to the same day for a single date.
+  dueFrom?: string;
+  dueTo?: string;
 };
 
 const EMPTY_FILTERS: BoardFilterState = { search: "" };
@@ -183,7 +176,8 @@ function hasActiveFilters(filters: BoardFilterState): boolean {
       filters.priority ||
       filters.label ||
       filters.assignee ||
-      filters.due,
+      filters.dueFrom ||
+      filters.dueTo,
   );
 }
 
@@ -217,20 +211,15 @@ function highlightMatches(text: string, tokens: string[]): React.ReactNode {
   });
 }
 
-const startOfToday = () => {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-};
-
-function dueBucketOf(task: BoardTask): DueBucket {
-  if (!task.dueDate) return "none";
-  const due = new Date(task.dueDate).getTime();
-  const today = startOfToday();
-  const tomorrow = today + 86_400_000;
-  if (task.status !== "done" && due < today) return "overdue";
-  if (due >= today && due < tomorrow) return "today";
-  if (due >= today && due < today + 7 * 86_400_000) return "week";
-  return "has";
+// Local day bounds (ms) for a yyyy-mm-dd string, so a task due any time on the
+// chosen day still falls inside the due-date range filter.
+function startOfDayMs(dateStr: string): number {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1, 0, 0, 0, 0).getTime();
+}
+function endOfDayMs(dateStr: string): number {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1, 23, 59, 59, 999).getTime();
 }
 
 function taskSearchHaystack(task: BoardTask): string {
@@ -242,11 +231,8 @@ function taskSearchHaystack(task: BoardTask): string {
     task.phase ?? "",
     task.categoryName ?? "",
     richTextToPlainText(parseRichText(task.description)),
-    due ? due.toLocaleDateString() : "",
-    entered ? entered.toLocaleDateString() : "",
-    entered
-      ? entered.toLocaleDateString(undefined, { month: "short", day: "numeric" })
-      : "",
+    due ? formatDate(due) : "",
+    entered ? formatDate(entered) : "",
   ]
     .join("  ")
     .toLowerCase();
@@ -291,7 +277,12 @@ function taskMatchesFilters(
       return false;
     }
   }
-  if (filters.due && dueBucketOf(task) !== filters.due) return false;
+  if (filters.dueFrom || filters.dueTo) {
+    if (!task.dueDate) return false;
+    const due = new Date(task.dueDate).getTime();
+    if (filters.dueFrom && due < startOfDayMs(filters.dueFrom)) return false;
+    if (filters.dueTo && due > endOfDayMs(filters.dueTo)) return false;
+  }
   return true;
 }
 
@@ -309,7 +300,12 @@ function hasRealOptions(options: FilterOption[]): boolean {
 
 // Derive the option lists for each filter dropdown from the current task set,
 // each with a count, so a dimension with no values simply renders no options.
-function buildFilterOptions(tasks: BoardTask[]) {
+// `allLabels` (the project's full label set) is merged in so a freshly created
+// label appears in the filter even before it's assigned to any task.
+function buildFilterOptions(
+  tasks: BoardTask[],
+  allLabels: { id: string; name: string; color: string }[] = [],
+) {
   const phase = new Map<string, number>();
   let untaggedPhase = 0;
   const category = new Map<string, number>();
@@ -319,7 +315,6 @@ function buildFilterOptions(tasks: BoardTask[]) {
   let noLabel = 0;
   const assignee = new Map<string, { name: string; count: number }>();
   let unassigned = 0;
-  const due = new Map<DueBucket, number>();
 
   for (const task of tasks) {
     if (task.phase) phase.set(task.phase, (phase.get(task.phase) ?? 0) + 1);
@@ -353,9 +348,12 @@ function buildFilterOptions(tasks: BoardTask[]) {
     } else if (!task.assigneeId) {
       unassigned += 1;
     }
+  }
 
-    const bucket = dueBucketOf(task);
-    due.set(bucket, (due.get(bucket) ?? 0) + 1);
+  // Surface every project label, not just ones already on a task (count 0 if
+  // unused) — so a label you just created shows up in the filter immediately.
+  for (const l of allLabels) {
+    if (!label.has(l.id)) label.set(l.id, { name: l.name, count: 0 });
   }
 
   const count = (n: number) => `${n}`;
@@ -384,14 +382,14 @@ function buildFilterOptions(tasks: BoardTask[]) {
       sublabel: count(noCategory),
     });
 
+  // Always offer the full Low / Medium / High set (not just priorities present
+  // on current tasks), so the choices are stable and predictable.
   const priorityOrder: TaskPriority[] = ["high", "medium", "low"];
-  const priorityOptions: FilterOption[] = priorityOrder
-    .filter((p) => priority.has(p))
-    .map((p) => ({
-      value: p,
-      label: p.charAt(0).toUpperCase() + p.slice(1),
-      sublabel: count(priority.get(p) ?? 0),
-    }));
+  const priorityOptions: FilterOption[] = priorityOrder.map((p) => ({
+    value: p,
+    label: p.charAt(0).toUpperCase() + p.slice(1),
+    sublabel: count(priority.get(p) ?? 0),
+  }));
 
   const labelOptions: FilterOption[] = [
     ...Array.from(label.entries())
@@ -425,22 +423,12 @@ function buildFilterOptions(tasks: BoardTask[]) {
       sublabel: count(unassigned),
     });
 
-  const dueOrder: DueBucket[] = ["overdue", "today", "week", "has", "none"];
-  const dueOptions: FilterOption[] = dueOrder
-    .filter((b) => due.has(b))
-    .map((b) => ({
-      value: b,
-      label: DUE_BUCKET_LABEL[b],
-      sublabel: count(due.get(b) ?? 0),
-    }));
-
   return {
     phase: phaseOptions,
     category: categoryOptions,
     priority: priorityOptions,
     label: labelOptions,
     assignee: assigneeOptions,
-    due: dueOptions,
   };
 }
 
@@ -498,17 +486,37 @@ function BoardFilters({
             clearLabel="All categories"
           />
         ) : null}
-        {hasRealOptions(options.due) ? (
-          <SearchSelect
-            className="min-w-[150px] flex-1"
-            options={options.due}
-            value={filters.due}
-            onChange={(value) => set({ due: value })}
-            placeholder="Due date"
-            searchPlaceholder="Search due…"
-            clearLabel="Any due date"
+        <div className="flex min-w-[240px] flex-1 items-center gap-2 rounded-md border border-border bg-background px-3 text-[13px] text-foreground">
+          <CalendarDots className="size-4 shrink-0 text-muted" />
+          <span className="shrink-0 whitespace-nowrap text-muted">Due</span>
+          <input
+            type="date"
+            value={filters.dueFrom ?? ""}
+            max={filters.dueTo || undefined}
+            onChange={(event) => set({ dueFrom: event.target.value || undefined })}
+            aria-label="Due date from"
+            className="min-w-0 flex-1 bg-transparent py-2 text-foreground outline-none"
           />
-        ) : null}
+          <span className="shrink-0 text-muted">–</span>
+          <input
+            type="date"
+            value={filters.dueTo ?? ""}
+            min={filters.dueFrom || undefined}
+            onChange={(event) => set({ dueTo: event.target.value || undefined })}
+            aria-label="Due date to"
+            className="min-w-0 flex-1 bg-transparent py-2 text-foreground outline-none"
+          />
+          {filters.dueFrom || filters.dueTo ? (
+            <button
+              type="button"
+              onClick={() => set({ dueFrom: undefined, dueTo: undefined })}
+              aria-label="Clear due date filter"
+              className="shrink-0 text-muted transition hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          ) : null}
+        </div>
         {hasRealOptions(options.label) ? (
           <SearchSelect
             className="min-w-[150px] flex-1"
@@ -563,6 +571,54 @@ function BoardFilters({
   );
 }
 
+// The badge row shown atop a task card: category, labels, phase, and priority.
+// Shared by the full card and the compact overview card so they never drift.
+function CardBadges({ task }: { task: BoardTask }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {task.categoryName ? (
+        <span className="inline-flex items-center rounded-sm border border-accent/40 bg-accent px-1.5 py-0.5 font-mono text-[11px] font-bold uppercase tracking-[0.04em] text-[var(--accent-on)]">
+          {task.categoryName}
+        </span>
+      ) : null}
+      {(task.labels ?? []).map((label) => (
+        <span
+          key={label.id}
+          className="inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-medium text-foreground"
+          style={{
+            backgroundColor: `${label.color}26`,
+            border: `1px solid ${label.color}66`,
+          }}
+          title="Label"
+        >
+          <span
+            aria-hidden
+            className="inline-block size-1.5 rounded-full"
+            style={{ backgroundColor: label.color }}
+          />
+          {label.name}
+        </span>
+      ))}
+      {task.phase ? (
+        <span
+          className="inline-flex rounded-sm border border-border bg-surface-strong px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-[0.04em] text-muted"
+          title="Phase"
+        >
+          {task.phase}
+        </span>
+      ) : null}
+      <span
+        className={cn(
+          "inline-flex rounded-sm border px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-[0.04em]",
+          priorityCopy[task.priority],
+        )}
+      >
+        {task.priority}
+      </span>
+    </div>
+  );
+}
+
 function TaskCardSurface({
   task,
   hrefBase,
@@ -571,6 +627,7 @@ function TaskCardSurface({
   dragHandle,
   isDragging = false,
   highlightTokens,
+  titleOnly = false,
 }: {
   task: BoardTask;
   hrefBase?: string;
@@ -579,6 +636,8 @@ function TaskCardSurface({
   dragHandle?: React.ReactNode;
   isDragging?: boolean;
   highlightTokens?: string[];
+  // Compact overview cards: render just the title (keeps the category tint).
+  titleOnly?: boolean;
 }) {
   // Card body picks up a soft wash of the category color so tasks read like
   // tinted index cards rather than identical rectangles. Done state halves
@@ -592,6 +651,26 @@ function TaskCardSurface({
       }
     : undefined;
 
+  // Compact overview card: badges + title only (no description/dates/footer).
+  if (titleOnly) {
+    return (
+      <article
+        className={cn(
+          "space-y-2 rounded-md border border-border px-3 py-2.5 shadow-sm transition",
+          tintBase ? undefined : "bg-surface",
+        )}
+        style={cardStyle}
+      >
+        <CardBadges task={task} />
+        <h3 className="text-[13px] font-medium leading-snug text-foreground">
+          {highlightTokens?.length
+            ? highlightMatches(task.title, highlightTokens)
+            : task.title}
+        </h3>
+      </article>
+    );
+  }
+
   return (
     <article
       className={cn(
@@ -603,47 +682,7 @@ function TaskCardSurface({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-2">
-          <div className="flex flex-wrap gap-1.5">
-            {task.categoryName ? (
-              <span className="inline-flex items-center rounded-sm border border-accent/40 bg-accent px-1.5 py-0.5 font-mono text-[11px] font-bold uppercase tracking-[0.04em] text-[var(--accent-on)]">
-                {task.categoryName}
-              </span>
-            ) : null}
-            {(task.labels ?? []).map((label) => (
-              <span
-                key={label.id}
-                className="inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-medium text-foreground"
-                style={{
-                  backgroundColor: `${label.color}26`,
-                  border: `1px solid ${label.color}66`,
-                }}
-                title="Label"
-              >
-                <span
-                  aria-hidden
-                  className="inline-block size-1.5 rounded-full"
-                  style={{ backgroundColor: label.color }}
-                />
-                {label.name}
-              </span>
-            ))}
-            {task.phase ? (
-              <span
-                className="inline-flex rounded-sm border border-border bg-surface-strong px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-[0.04em] text-muted"
-                title="Phase"
-              >
-                {task.phase}
-              </span>
-            ) : null}
-            <span
-              className={cn(
-                "inline-flex rounded-sm border px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-[0.04em]",
-                priorityCopy[task.priority],
-              )}
-            >
-              {task.priority}
-            </span>
-          </div>
+          <CardBadges task={task} />
           {task.code ? (
             <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-muted">
               {task.code}
@@ -735,7 +774,7 @@ function TaskCardSurface({
           {task.dueDate ? (
             <span className="inline-flex items-center gap-1">
               <CalendarDots className="size-3.5" />
-              {new Date(task.dueDate).toLocaleDateString()}
+              {formatDate(task.dueDate)}
             </span>
           ) : null}
           <span
@@ -938,6 +977,8 @@ export function KanbanBoard({
   previewLimit,
   showMoreHref,
   scrollColumns = false,
+  allLabels,
+  compactCards = false,
 }: KanbanBoardProps) {
   const workspaceUi = useOptionalProjectWorkspaceUi();
   const [columns, setColumns] = useState<TaskColumns>(() => groupTasks(tasks));
@@ -952,7 +993,10 @@ export function KanbanBoard({
     }),
   );
   const hrefBase = taskHrefBase ?? `/projects/${projectId}`;
-  const filterOptions = useMemo(() => buildFilterOptions(tasks), [tasks]);
+  const filterOptions = useMemo(
+    () => buildFilterOptions(tasks, allLabels),
+    [tasks, allLabels],
+  );
   const tokens = useMemo(() => searchTokens(filters.search), [filters.search]);
   const isFiltered = hasActiveFilters(filters);
 
@@ -1164,13 +1208,18 @@ export function KanbanBoard({
                         onClick={() => onSelectTask(task)}
                         className="block w-full cursor-pointer rounded-md text-left transition hover:opacity-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
-                        <TaskCardSurface task={task} highlightTokens={tokens} />
+                        <TaskCardSurface
+                          task={task}
+                          highlightTokens={tokens}
+                          titleOnly={compactCards}
+                        />
                       </button>
                     ) : (
                       <TaskCardSurface
                         key={task.id}
                         task={task}
                         highlightTokens={tokens}
+                        titleOnly={compactCards}
                       />
                     ),
                   )

@@ -209,7 +209,7 @@ export function SignInPanel({
                 {showNameField ? (
                   <label className="flex flex-col gap-2">
                     <span className="text-[13px] font-medium text-foreground">Display name</span>
-                    <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2.5 focus-within:border-accent">
+                    <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2.5">
                       <UserCircle className="size-4 text-muted" />
                       <input
                         value={name}
@@ -225,7 +225,7 @@ export function SignInPanel({
                   <span className="text-[13px] font-medium text-foreground">Email</span>
                   <div
                     className={cn(
-                      "flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2.5 focus-within:border-accent",
+                      "flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2.5",
                       emailReadOnly && "opacity-70",
                     )}
                   >
@@ -243,7 +243,7 @@ export function SignInPanel({
 
                 <label className="flex flex-col gap-2">
                   <span className="text-[13px] font-medium text-foreground">Password</span>
-                  <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2.5 focus-within:border-accent">
+                  <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2.5">
                     <LockKey className="size-4 text-muted" />
                     <input
                       type="password"

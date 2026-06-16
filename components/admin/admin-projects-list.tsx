@@ -11,7 +11,7 @@ import {
 
 import { formatProjectStatus } from "@/lib/project-status";
 import type { AdminProjectSummary } from "@/lib/data-admin";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 const projectStatusBadgeClassNames = {
   production: "border-emerald/30 bg-emerald/10 text-emerald",
@@ -22,12 +22,7 @@ const projectStatusBadgeClassNames = {
 } as const;
 
 function formatDeadline(value: Date | null) {
-  if (!value) return "Open-ended";
-  return value.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatDate(value, "Open-ended");
 }
 
 type Props = {
