@@ -33,7 +33,7 @@ export function ClientBoardTasks({
         projectId={projectId}
         readOnly
         showFilters
-        previewLimit={5}
+        scrollColumns
         tasks={tasks}
         onSelectTask={
           allowTaskDetail

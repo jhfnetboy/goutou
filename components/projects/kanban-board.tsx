@@ -104,6 +104,9 @@ type KanbanBoardProps = {
   // When set, "Show more" navigates here (e.g. overview → board) instead of
   // expanding the preview in place.
   showMoreHref?: string;
+  // Cap each column to ~5 cards' height and scroll the overflow in place
+  // (public board) rather than paging with a "Show more" button.
+  scrollColumns?: boolean;
 };
 
 type TaskColumns = Record<TaskStatus, BoardTask[]>;
@@ -886,10 +889,14 @@ function StaticTaskColumn({
   status,
   items,
   children,
+  // Cap the card list height (≈ 5 cards) and scroll the overflow in place,
+  // instead of paging with a "Show more" button.
+  scroll = false,
 }: {
   status: TaskStatus;
   items: BoardTask[];
   children: React.ReactNode;
+  scroll?: boolean;
 }) {
   return (
     <section className="rounded-md border border-border bg-surface/60 px-3 py-3">
@@ -904,7 +911,14 @@ function StaticTaskColumn({
         </span>
         <span className="font-mono text-[11px] text-muted">{items.length}</span>
       </div>
-      <div className="space-y-3">{children}</div>
+      <div
+        className={cn(
+          "space-y-3",
+          scroll && "max-h-[36rem] overflow-y-auto pr-1",
+        )}
+      >
+        {children}
+      </div>
     </section>
   );
 }
@@ -918,6 +932,7 @@ export function KanbanBoard({
   showFilters = false,
   previewLimit,
   showMoreHref,
+  scrollColumns = false,
 }: KanbanBoardProps) {
   const workspaceUi = useOptionalProjectWorkspaceUi();
   const [columns, setColumns] = useState<TaskColumns>(() => groupTasks(tasks));
@@ -1125,7 +1140,12 @@ export function KanbanBoard({
             const items = displayColumns[status];
 
             return (
-              <StaticTaskColumn key={status} status={status} items={items}>
+              <StaticTaskColumn
+                key={status}
+                status={status}
+                items={items}
+                scroll={scrollColumns}
+              >
                 {items.length ? (
                   items.map((task) =>
                     onSelectTask ? (
