@@ -707,6 +707,7 @@ function buildRecentActivity(
         ...activity,
         actorName: activity.actorName ?? "Unknown user",
         projectName: project?.name ?? "Unknown project",
+        projectColor: project?.color ?? null,
         projectArchived: Boolean(project?.archivedAt),
         href,
       };

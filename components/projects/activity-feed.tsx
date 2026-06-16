@@ -3,6 +3,7 @@ import { ArrowSquareOut, ClockCounterClockwise } from "@phosphor-icons/react/dis
 
 import { ActivityActionBadge } from "@/components/projects/activity-action-badge";
 import { ActivityChangesButton } from "@/components/projects/activity-changes-modal";
+import { ProjectColorBadge } from "@/components/projects/project-color-badge";
 import type { RecentActivityItem } from "@/lib/data";
 import { cn } from "@/lib/utils";
 
@@ -51,10 +52,26 @@ export function ActivityFeed({
 
       {items.length ? (
         <div className="space-y-2">
-          {items.map((item) => (
+          {items.map((item) => {
+            // Cross-project feed (Today / dashboard): tint each card with a
+            // left-edge accent + soft wash of the project's color, matching the
+            // project list. Single-project feeds stay neutral.
+            const tint = showProjectName ? item.projectColor : null;
+            const cardStyle = tint
+              ? {
+                  borderLeftWidth: 3,
+                  borderLeftColor: tint,
+                  backgroundColor: `color-mix(in srgb, ${tint} 8%, var(--surface))`,
+                }
+              : undefined;
+            return (
             <div
               key={item.id}
-              className="relative flex items-start justify-between gap-4 rounded-md border border-border bg-surface px-4 py-3 transition hover:border-border-strong hover:bg-surface-strong"
+              className={cn(
+                "relative flex items-start justify-between gap-4 rounded-md border border-border px-4 py-3 transition hover:border-border-strong",
+                tint ? null : "bg-surface hover:bg-surface-strong",
+              )}
+              style={cardStyle}
             >
               {/* Stretched link makes the whole card navigable; the Show-details
                   button sits above it (relative z-10) so it opens the modal
@@ -69,9 +86,10 @@ export function ActivityFeed({
                   <ActivityActionBadge action={item.action} />
                   <p className="text-[13px] font-medium text-foreground">{item.label}</p>
                   {showProjectName ? (
-                    <span className="ui-badge">
-                      {item.projectName}
-                    </span>
+                    <ProjectColorBadge
+                      name={item.projectName}
+                      color={item.projectColor}
+                    />
                   ) : null}
                 </div>
                 {item.detail ? (
@@ -98,7 +116,8 @@ export function ActivityFeed({
                 <ArrowSquareOut className="ml-auto mt-2 size-4 text-muted" />
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="rounded-md border border-dashed border-border bg-surface px-5 py-10 text-[13px] leading-7 text-muted">
