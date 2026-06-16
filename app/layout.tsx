@@ -37,7 +37,7 @@ export async function generateMetadata(): Promise<Metadata> {
     : {
         icon: [
           { url: "/favicon.ico", sizes: "any" },
-          { url: "/seeder-mark.svg", type: "image/svg+xml" },
+          { url: "/favicon.svg", type: "image/svg+xml" },
         ],
         apple: "/seeder-icon-192.png",
       };
