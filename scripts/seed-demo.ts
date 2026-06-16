@@ -100,13 +100,18 @@ function insert(
   table: string,
   cols: string[],
   rows: Record<string, unknown>[],
+  // "ignore" (default) keeps existing rows untouched on a re-run. "replace"
+  // re-writes rows by id — use it for date-sensitive data (e.g. the daily plan)
+  // so re-seeding refreshes planned_date/status to land on the current week.
+  conflict: "ignore" | "replace" = "ignore",
 ) {
   if (!rows.length) return;
   const values = rows
     .map((r) => `  (${cols.map((c) => q(r[c])).join(", ")})`)
     .join(",\n");
+  const verb = conflict === "replace" ? "REPLACE" : "IGNORE";
   statements.push(
-    `INSERT OR IGNORE INTO ${table} (${cols.join(", ")}) VALUES\n${values};`,
+    `INSERT OR ${verb} INTO ${table} (${cols.join(", ")}) VALUES\n${values};`,
   );
 }
 
@@ -299,14 +304,26 @@ insert(
 
 // ===================== DAILY TASKS (this week) =====================
 const daily = [
+  // Today — a full plate: project work + adhoc, mixed statuses/priorities.
   { id: "dt-1", title: "Review onboarding PR", status: "doing", priority: "high", kind: "project", project: AURORA, linked: HERO, off: 0, sort: 0 },
   { id: "dt-2", title: "Write the release notes", status: "todo", priority: "medium", kind: "adhoc", project: null, linked: null, off: 0, sort: 1 },
   { id: "dt-3", title: "1:1 with Maya", status: "todo", priority: "low", kind: "adhoc", project: null, linked: null, off: 0, sort: 2 },
+  { id: "dt-9", title: "Polish onboarding empty states", status: "todo", priority: "medium", kind: "project", project: PULSE, linked: "demo-task-c2", off: 0, sort: 3 },
+  { id: "dt-10", title: "Sync with design on the icon set", status: "done", priority: "low", kind: "project", project: AURORA, linked: "demo-task-a4", off: 0, sort: 4 },
+  { id: "dt-11", title: "Reply to the Atlas client thread", status: "todo", priority: "high", kind: "adhoc", project: null, linked: null, off: 0, sort: 5 },
+  // Tomorrow.
   { id: "dt-4", title: "Triage new requests", status: "doing", priority: "medium", kind: "adhoc", project: null, linked: null, off: 1, sort: 0 },
   { id: "dt-5", title: "ETL pipeline testing", status: "todo", priority: "high", kind: "project", project: ATLAS, linked: "demo-task-b1", off: 1, sort: 1 },
+  { id: "dt-12", title: "Pair on the offline cache layer", status: "todo", priority: "high", kind: "project", project: AURORA, linked: "demo-task-a3", off: 1, sort: 2 },
+  // Later this week.
   { id: "dt-6", title: "Design review: Pulse", status: "todo", priority: "medium", kind: "project", project: PULSE, linked: null, off: 2, sort: 0 },
-  { id: "dt-7", title: "Inbox zero", status: "done", priority: "low", kind: "adhoc", project: null, linked: null, off: -1, sort: 0 },
+  { id: "dt-13", title: "Draft the ETL runbook", status: "todo", priority: "medium", kind: "project", project: ATLAS, linked: "demo-task-b2", off: 2, sort: 1 },
   { id: "dt-8", title: "Sprint planning", status: "todo", priority: "high", kind: "adhoc", project: null, linked: null, off: 3, sort: 0 },
+  { id: "dt-16", title: "Roadmap grooming", status: "todo", priority: "medium", kind: "adhoc", project: null, linked: null, off: 4, sort: 0 },
+  // Earlier this week (history / completed).
+  { id: "dt-7", title: "Inbox zero", status: "done", priority: "low", kind: "adhoc", project: null, linked: null, off: -1, sort: 0 },
+  { id: "dt-14", title: "Ship the splash animation", status: "done", priority: "medium", kind: "project", project: AURORA, linked: "demo-task-a7", off: -1, sort: 1 },
+  { id: "dt-15", title: "Weekly review & cleanup", status: "done", priority: "low", kind: "adhoc", project: null, linked: null, off: -2, sort: 0 },
 ];
 insert(
   "daily_tasks",
@@ -317,6 +334,8 @@ insert(
     kind: d.kind, project_id: d.project, linked_task_id: d.linked,
     sort_order: d.sort, batch_id: null, created_at: ms(-2), updated_at: ms(-1),
   })),
+  // Refresh on every reseed so the plan always lands on the current week.
+  "replace",
 );
 
 // ===================== STATUS UPDATES (client board log + shipped feed) =====================
