@@ -223,17 +223,12 @@ export function AppSidebar({
   };
   const hasAnyNotifications = (notifications?.length ?? 0) > 0;
   const clearAllNotifications = () => {
-    // Computed (derived) ids the server can't enumerate on its own — pass them
-    // so it can suppress each via the read ledger; stored rows it deletes.
-    const computedIds = (notifications ?? [])
-      .filter((notification) => !notification.id.startsWith("stored-"))
-      .map((notification) => notification.id);
-    // Optimistic: empty the list and zero the badge immediately.
+    // Optimistic: empty the list and zero the badge immediately. The server
+    // deletes stored rows and sets a "cleared at" watermark that hides every
+    // currently-shown (live-computed) notification too.
     setNotifications([]);
     setLiveNotificationCount(0);
-    const formData = new FormData();
-    formData.set("computedIds", computedIds.join(","));
-    void clearAllNotificationsAction(formData);
+    void clearAllNotificationsAction();
   };
 
   return (

@@ -1843,38 +1843,22 @@ export async function markNotificationReadAction(formData: FormData) {
 }
 
 // Clear all of the viewer's notifications at once. Stored notifications are
-// deleted outright; computed ones are live-derived (no row to delete), so the
-// client passes their derived ids and we suppress them via the read ledger.
-// Idempotent.
-export async function clearAllNotificationsAction(formData: FormData) {
+// deleted outright; live-computed ones (no row to delete) are hidden by a
+// single "cleared at" watermark on the user — robust no matter how many there
+// are (a per-notification read insert can blow past D1's bound-param limit when
+// a project has dozens of done tasks). Idempotent.
+export async function clearAllNotificationsAction() {
   const viewer = await requireViewer();
   const db = getDb();
   const now = new Date();
 
-  await db
-    .delete(notifications)
-    .where(eq(notifications.recipientId, viewer.id));
-
-  const computedIds = String(formData.get("computedIds") ?? "")
-    .split(",")
-    .map((id) => id.trim())
-    .filter((id) => id.length > 0 && !id.startsWith("stored-"));
-
-  if (computedIds.length) {
-    await db
-      .insert(notificationReads)
-      .values(
-        computedIds.map((notificationId) => ({
-          id: crypto.randomUUID(),
-          userId: viewer.id,
-          notificationId,
-          readAt: now,
-        })),
-      )
-      .onConflictDoNothing({
-        target: [notificationReads.userId, notificationReads.notificationId],
-      });
-  }
+  await db.batch([
+    db.delete(notifications).where(eq(notifications.recipientId, viewer.id)),
+    db
+      .update(user)
+      .set({ notificationsClearedAt: now })
+      .where(eq(user.id, viewer.id)),
+  ]);
 }
 
 /* ---------------------------------------------------------------------------

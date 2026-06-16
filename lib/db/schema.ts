@@ -85,6 +85,13 @@ export const user = sqliteTable(
     // Soft-delete: when set, the user is deactivated — blocked from every
     // guarded route (getViewer returns null) and their sessions are purged.
     disabledAt: integer("disabled_at", { mode: "timestamp_ms" }),
+    // "Clear all notifications" watermark: notifications created at or before
+    // this instant are hidden. One cheap update clears everything (including
+    // live-computed items that have no row to delete), and it can't hit D1's
+    // bound-parameter limit the way a per-notification read insert can.
+    notificationsClearedAt: integer("notifications_cleared_at", {
+      mode: "timestamp_ms",
+    }),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),

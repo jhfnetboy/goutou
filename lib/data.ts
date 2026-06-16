@@ -1237,6 +1237,27 @@ async function getNotificationReadMap(userId: string): Promise<Map<string, Date>
   return new Map(rows.map((row) => [row.notificationId, row.readAt]));
 }
 
+// The "Clear all" watermark (or null). Notifications at/older than this are hidden.
+async function getNotificationsClearedAt(userId: string): Promise<Date | null> {
+  const db = getDb();
+  const [row] = await db
+    .select({ clearedAt: user.notificationsClearedAt })
+    .from(user)
+    .where(eq(user.id, userId))
+    .limit(1);
+  return row?.clearedAt ?? null;
+}
+
+// A notification is visible if it's unread AND newer than the clear watermark.
+function isLiveNotification(
+  item: { readAt: Date | null; createdAt: Date },
+  clearedAt: Date | null,
+): boolean {
+  if (item.readAt) return false;
+  if (clearedAt && item.createdAt.getTime() <= clearedAt.getTime()) return false;
+  return true;
+}
+
 // Persisted, event-driven notifications (e.g. daily-ops assignments). Adapted
 // into the same shape the bell renders, with a `stored-` id prefix so
 // markNotificationReadAction can route them to their own readAt column.
@@ -1284,12 +1305,14 @@ async function getStoredUnreadCount(userId: string): Promise<number> {
 }
 
 export async function getNotificationsForUser(userId: string) {
-  const [collections, assignedActivity, readMap, stored] = await Promise.all([
-    getOwnerWorkspaceCollections(userId),
-    getAssignedTaskActivity(userId),
-    getNotificationReadMap(userId),
-    getStoredNotificationItems(userId),
-  ]);
+  const [collections, assignedActivity, readMap, stored, clearedAt] =
+    await Promise.all([
+      getOwnerWorkspaceCollections(userId),
+      getAssignedTaskActivity(userId),
+      getNotificationReadMap(userId),
+      getStoredNotificationItems(userId),
+      getNotificationsClearedAt(userId),
+    ]);
   const { allProjects, requestsForOwner, tasksForOwner, statusUpdatesForOwner } =
     collections;
   const openProjects = allProjects.filter((project) => !project.archivedAt);
@@ -1303,11 +1326,10 @@ export async function getNotificationsForUser(userId: string) {
     readMap,
   );
 
-  // Only surface unread items. Read = cleared/handled: stored ones were deleted,
-  // computed ones carry a read-ledger entry — either way they should stay gone
-  // after a refresh rather than reappear greyed.
+  // Only surface unread items newer than the "Clear all" watermark, so cleared
+  // and handled notifications stay gone after a refresh instead of reappearing.
   return sortNotificationItems(
-    [...computed, ...stored].filter((item) => !item.readAt),
+    [...computed, ...stored].filter((item) => isLiveNotification(item, clearedAt)),
   );
 }
 
@@ -1320,12 +1342,14 @@ export async function getNotificationsForUser(userId: string) {
 export async function getAppShellDataForViewer(viewer: ProjectViewer) {
   const { allProjects } = await getCollectionsForViewer(viewer);
   // Notifications are personal regardless of admin powers.
-  const [personal, assignedActivity, readMap, storedUnread] = await Promise.all([
-    getOwnerWorkspaceCollections(viewer.id),
-    getAssignedTaskActivity(viewer.id),
-    getNotificationReadMap(viewer.id),
-    getStoredUnreadCount(viewer.id),
-  ]);
+  const [personal, assignedActivity, readMap, storedUnread, clearedAt] =
+    await Promise.all([
+      getOwnerWorkspaceCollections(viewer.id),
+      getAssignedTaskActivity(viewer.id),
+      getNotificationReadMap(viewer.id),
+      getStoredUnreadCount(viewer.id),
+      getNotificationsClearedAt(viewer.id),
+    ]);
   const openProjects = allProjects.filter((project) => !project.archivedAt);
   const computedUnread = buildNotifications(
     personal.allProjects.filter((p) => !p.archivedAt),
@@ -1334,7 +1358,7 @@ export async function getAppShellDataForViewer(viewer: ProjectViewer) {
     personal.statusUpdatesForOwner,
     assignedActivity,
     readMap,
-  ).filter((notification) => !notification.readAt).length;
+  ).filter((notification) => isLiveNotification(notification, clearedAt)).length;
   const notificationCount = computedUnread + storedUnread;
 
   return {
