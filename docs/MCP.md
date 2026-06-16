@@ -246,6 +246,13 @@ Conventions:
 - `update-task` / `update-request` / `update-project` are **full-replace** — the
   description tells the agent to read first and pass the whole field set, or
   omitted optional fields clear.
+- **Descriptions accept Markdown.** Task/request `description` is stored as
+  TipTap (ProseMirror) JSON. The write services run a non-JSON description string
+  through `normalizeRichTextInput` (`lib/markdown-to-rich-text.ts`), so an agent
+  can paste a Jira/Markdown description and it lands as real headings, lists,
+  bold, links, code, and tables — already-editor-JSON input passes through
+  untouched, so the web path is unaffected. `parseRichText` applies the same
+  conversion on read, so descriptions imported before this change still render.
 - `update-task-status` is a status-only convenience: it loads the row and
   delegates to `updateTask` so the move is diffed + activity-logged (no separate,
   unlogged path).

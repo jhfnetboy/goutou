@@ -16,6 +16,7 @@ import {
   projects,
   requestStatusValues,
 } from "@/lib/db/schema";
+import { normalizeRichTextInput } from "@/lib/rich-text";
 import {
   assertProjectAccess,
   getProjectSlug,
@@ -24,10 +25,14 @@ import {
   optionalText,
 } from "@/lib/services/_shared";
 
+const descriptionField = optionalText.describe(
+  "Request description. Markdown is accepted (headings, bold/italic, lists, links, `code`, fenced code blocks, tables) and converted to rich text.",
+);
+
 export const createRequestInputSchema = z.object({
   projectId: z.string().min(1),
   title: z.string().trim().min(1).max(140),
-  description: optionalText,
+  description: descriptionField,
   priority: z.enum(priorityValues).default("medium"),
 });
 export type CreateRequestInput = z.infer<typeof createRequestInputSchema>;
@@ -36,7 +41,7 @@ export const updateRequestInputSchema = z.object({
   requestId: z.string().min(1),
   projectId: z.string().min(1),
   title: z.string().trim().min(1).max(140),
-  description: optionalText,
+  description: descriptionField,
   status: z.enum(requestStatusValues),
   priority: z.enum(priorityValues),
 });
@@ -57,6 +62,7 @@ export async function createRequest(
   await assertProjectAccess(viewer, input.projectId);
 
   const requestId = crypto.randomUUID();
+  const description = normalizeRichTextInput(input.description);
   const slug = await getProjectSlug(input.projectId);
 
   // Retry MAX+1 code allocation on a concurrent collision against the
@@ -72,7 +78,7 @@ export async function createRequest(
           ownerId: viewer.id,
           projectId: input.projectId,
           title: input.title,
-          description: input.description ?? null,
+          description: description ?? null,
           codeNumber,
           priority: input.priority,
           status: "new",
@@ -126,13 +132,15 @@ export async function updateRequest(
     throw new Error("Request not found.");
   }
 
+  const description = normalizeRichTextInput(input.description);
+
   const changes = diffChanges([
     { field: "title", label: "Title", from: existingRequest.title, to: input.title },
     {
       field: "description",
       label: "Description",
       from: existingRequest.description,
-      to: input.description ?? null,
+      to: description ?? null,
       kind: "rich",
     },
     {
@@ -155,7 +163,7 @@ export async function updateRequest(
       .update(clientRequests)
       .set({
         title: input.title,
-        description: input.description ?? null,
+        description: description ?? null,
         status: input.status,
         priority: input.priority,
         updatedAt: now,

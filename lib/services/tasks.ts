@@ -26,6 +26,7 @@ import {
   tasks,
   taskStatusValues,
 } from "@/lib/db/schema";
+import { normalizeRichTextInput } from "@/lib/rich-text";
 import {
   assertProjectAccess,
   assertTaskInProject,
@@ -40,10 +41,14 @@ import {
   userNameMap,
 } from "@/lib/services/_shared";
 
+const descriptionField = optionalText.describe(
+  "Task description. Markdown is accepted (headings, bold/italic, lists, links, `code`, fenced code blocks, tables) and converted to rich text — paste a Jira description as-is.",
+);
+
 export const createTaskInputSchema = z.object({
   projectId: z.string().min(1),
   title: z.string().trim().min(1).max(140),
-  description: optionalText,
+  description: descriptionField,
   categoryId: optionalText.describe(
     "Task category id from the project (an id, not a category name).",
   ),
@@ -65,7 +70,7 @@ export const updateTaskInputSchema = z.object({
   taskId: z.string().min(1),
   projectId: z.string().min(1),
   title: z.string().trim().min(1).max(140),
-  description: optionalText,
+  description: descriptionField,
   categoryId: optionalText.describe(
     "Task category id from the project (an id, not a category name).",
   ),
@@ -96,6 +101,7 @@ export async function createTask(
   await assertProjectAccess(viewer, input.projectId);
 
   const taskId = crypto.randomUUID();
+  const description = normalizeRichTextInput(input.description);
   const assigneeId = await resolveAssignee(input.assigneeId, input.projectId);
   const slug = await getProjectSlug(input.projectId);
   const category = await resolveCategory(input.categoryId, input.projectId);
@@ -135,7 +141,7 @@ export async function createTask(
           requestId,
           assigneeId,
           title: input.title,
-          description: input.description ?? null,
+          description: description ?? null,
           codeNumber,
           categoryId: category.categoryId,
           categoryName: category.categoryName,
@@ -199,6 +205,7 @@ export async function updateTask(
 
   const category = await resolveCategory(input.categoryId, input.projectId);
   const nextDueDate = resolveDueDate(input.dueDate);
+  const description = normalizeRichTextInput(input.description);
 
   const names = await userNameMap([existingTask.assigneeId, assigneeId]);
   const assigneeFrom = existingTask.assigneeId
@@ -213,7 +220,7 @@ export async function updateTask(
       field: "description",
       label: "Description",
       from: existingTask.description,
-      to: input.description ?? null,
+      to: description ?? null,
       kind: "rich",
     },
     {
@@ -255,7 +262,7 @@ export async function updateTask(
       .update(tasks)
       .set({
         title: input.title,
-        description: input.description ?? null,
+        description: description ?? null,
         categoryId: category.categoryId,
         categoryName: category.categoryName,
         categoryColor: category.categoryColor,

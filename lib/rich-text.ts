@@ -1,8 +1,12 @@
 // Helpers around the rich-text storage format (TipTap JSON / ProseMirror doc).
 //
-// Existing description columns held plain text before this change — we
-// gracefully wrap unparseable content into a single paragraph so the old
-// rows still render in the new editor without a backfill.
+// A description is stored as one of: TipTap JSON (the editor's own output),
+// Markdown (a Jira-style import sent through the MCP write tools), or — for rows
+// that predate the editor — plain text. parseRichText accepts all three: JSON is
+// used as-is, anything else is run through the Markdown converter (which degrades
+// to plain paragraphs for text without any Markdown), and a converter failure
+// falls back to wrapping lines into paragraphs.
+import { markdownToRichText } from "@/lib/markdown-to-rich-text";
 
 export type RichTextDoc = {
   type: "doc";
@@ -11,32 +15,67 @@ export type RichTextDoc = {
 
 const EMPTY_DOC: RichTextDoc = { type: "doc", content: [] };
 
+/** A TipTap doc JSON string, if `value` is one; otherwise null. */
+function asRichTextDocJson(value: string): RichTextDoc | null {
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed && typeof parsed === "object" && parsed.type === "doc") {
+      return parsed as RichTextDoc;
+    }
+  } catch {
+    // not JSON
+  }
+  return null;
+}
+
 export function parseRichText(value: string | null | undefined): RichTextDoc {
   if (!value) return EMPTY_DOC;
 
   const trimmed = value.trim();
   if (!trimmed) return EMPTY_DOC;
 
-  try {
-    const parsed = JSON.parse(trimmed);
-    if (parsed && typeof parsed === "object" && parsed.type === "doc") {
-      return parsed as RichTextDoc;
-    }
-  } catch {
-    // fall through to plain-text wrapping
-  }
+  const asJson = asRichTextDocJson(trimmed);
+  if (asJson) return asJson;
 
-  // Old plain text — wrap each non-empty line into its own paragraph.
-  const paragraphs = trimmed.split(/\r?\n\r?\n+/);
-  return {
-    type: "doc",
-    content: paragraphs.map((paragraph) => {
-      const text = paragraph.replace(/\s+/g, " ").trim();
-      return text
-        ? { type: "paragraph", content: [{ type: "text", text }] }
-        : { type: "paragraph" };
-    }),
-  };
+  // Not the editor's JSON — treat it as Markdown (covers Jira/MCP imports and
+  // legacy plain text, which the converter renders as plain paragraphs).
+  try {
+    return markdownToRichText(trimmed);
+  } catch {
+    // Converter blew up on pathological input — wrap lines into paragraphs.
+    const paragraphs = trimmed.split(/\r?\n\r?\n+/);
+    return {
+      type: "doc",
+      content: paragraphs.map((paragraph) => {
+        const text = paragraph.replace(/\s+/g, " ").trim();
+        return text
+          ? { type: "paragraph", content: [{ type: "text", text }] }
+          : { type: "paragraph" };
+      }),
+    };
+  }
+}
+
+/**
+ * Normalize a description string for STORAGE: editor JSON is kept verbatim;
+ * anything else (Markdown / plain text from an MCP client) is converted to
+ * canonical TipTap JSON so the stored value is always the editor's own format.
+ * Returns undefined for empty input. Used by the task/request write services so
+ * an MCP import lands as rich content, identical to typing it in the editor.
+ */
+export function normalizeRichTextInput(
+  value: string | null | undefined,
+): string | undefined {
+  if (value == null) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  if (asRichTextDocJson(trimmed)) return trimmed; // already editor JSON
+  try {
+    return serializeRichText(markdownToRichText(trimmed));
+  } catch {
+    return trimmed; // store raw; parseRichText still renders it on read
+  }
 }
 
 export function serializeRichText(doc: RichTextDoc | null | undefined): string {
