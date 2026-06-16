@@ -472,10 +472,10 @@ function BoardFilters({
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-stretch gap-2">
         {hasRealOptions(options.phase) ? (
           <SearchSelect
-            className="w-40"
+            className="min-w-[150px] flex-1"
             options={options.phase}
             value={filters.phase}
             onChange={(value) => set({ phase: value })}
@@ -486,7 +486,7 @@ function BoardFilters({
         ) : null}
         {hasRealOptions(options.category) ? (
           <SearchSelect
-            className="w-40"
+            className="min-w-[150px] flex-1"
             options={options.category}
             value={filters.category}
             onChange={(value) => set({ category: value })}
@@ -497,7 +497,7 @@ function BoardFilters({
         ) : null}
         {hasRealOptions(options.due) ? (
           <SearchSelect
-            className="w-40"
+            className="min-w-[150px] flex-1"
             options={options.due}
             value={filters.due}
             onChange={(value) => set({ due: value })}
@@ -508,7 +508,7 @@ function BoardFilters({
         ) : null}
         {hasRealOptions(options.label) ? (
           <SearchSelect
-            className="w-40"
+            className="min-w-[150px] flex-1"
             options={options.label}
             value={filters.label}
             onChange={(value) => set({ label: value })}
@@ -519,7 +519,7 @@ function BoardFilters({
         ) : null}
         {hasRealOptions(options.priority) ? (
           <SearchSelect
-            className="w-44"
+            className="min-w-[150px] flex-1"
             options={options.priority}
             value={filters.priority}
             onChange={(value) => set({ priority: value })}
@@ -530,7 +530,7 @@ function BoardFilters({
         ) : null}
         {hasRealOptions(options.assignee) ? (
           <SearchSelect
-            className="w-44"
+            className="min-w-[150px] flex-1"
             options={options.assignee}
             value={filters.assignee}
             onChange={(value) => set({ assignee: value })}
@@ -539,22 +539,23 @@ function BoardFilters({
             clearLabel="Anyone"
           />
         ) : null}
-        {active ? (
+      </div>
+
+      {active ? (
+        <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => onChange(EMPTY_FILTERS)}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 py-2 text-[12px] font-medium text-muted transition hover:border-border-strong hover:text-foreground"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 py-1.5 text-[12px] font-medium text-muted transition hover:border-border-strong hover:text-foreground"
           >
             <X className="size-3.5" />
             Clear
           </button>
-        ) : null}
-        {active ? (
           <span className="font-mono text-[11px] uppercase tracking-[0.04em] text-muted">
             {resultCount} of {totalCount}
           </span>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }
