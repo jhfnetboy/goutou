@@ -399,6 +399,55 @@ export const taskCategories = sqliteTable(
   ],
 );
 
+// Multi-tag labels: like task categories (reusable per-project name + color),
+// but many-to-many — a task can carry several labels (vs. a single category).
+// Membership lives in the task_task_labels join table rather than denormalized
+// onto the task row.
+export const taskLabels = sqliteTable(
+  "task_labels",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    color: text("color").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("task_labels_project_name_idx").on(table.projectId, table.name),
+    index("task_labels_project_idx").on(table.projectId),
+  ],
+);
+
+export const taskTaskLabels = sqliteTable(
+  "task_task_labels",
+  {
+    id: text("id").primaryKey(),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    labelId: text("label_id")
+      .notNull()
+      .references(() => taskLabels.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("task_task_labels_task_label_idx").on(
+      table.taskId,
+      table.labelId,
+    ),
+    index("task_task_labels_label_idx").on(table.labelId),
+  ],
+);
+
 export const taskChecklistItems = sqliteTable(
   "task_checklist_items",
   {
@@ -756,5 +805,7 @@ export type TaskComment = typeof taskComments.$inferSelect;
 export type RequestComment = typeof requestComments.$inferSelect;
 export type NotificationRead = typeof notificationReads.$inferSelect;
 export type TaskCategory = typeof taskCategories.$inferSelect;
+export type TaskLabel = typeof taskLabels.$inferSelect;
+export type TaskTaskLabel = typeof taskTaskLabels.$inferSelect;
 export type SystemSettings = typeof systemSettings.$inferSelect;
 export type PersonalAccessToken = typeof personalAccessToken.$inferSelect;

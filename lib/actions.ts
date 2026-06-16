@@ -45,6 +45,12 @@ import {
   updateRequestComment as updateRequestCommentService,
   updateTaskComment as updateTaskCommentService,
 } from "@/lib/services/comments";
+import {
+  createTaskLabel as createTaskLabelService,
+  deleteTaskLabel as deleteTaskLabelService,
+  setTaskLabels as setTaskLabelsService,
+  updateTaskLabel as updateTaskLabelService,
+} from "@/lib/services/labels";
 import { writeProjectNote as writeProjectNoteService } from "@/lib/services/notes";
 import {
   deleteStatusUpdate as deleteStatusUpdateService,
@@ -1630,6 +1636,101 @@ export async function deleteTaskCategoryAction(formData: FormData) {
     board: true,
     settings: true,
   });
+}
+
+// ---- Task labels ------------------------------------------------------------
+
+const labelNameSchema = z.string().trim().min(1).max(40);
+const labelColorSchema = z
+  .string()
+  .trim()
+  .refine(isValidProjectColor, {
+    message: "Color must be a swatch from the palette.",
+  });
+
+const labelCreateSchema = z.object({
+  projectId: z.string().min(1),
+  name: labelNameSchema,
+  color: labelColorSchema,
+});
+
+const labelUpdateSchema = z.object({
+  labelId: z.string().min(1),
+  name: labelNameSchema,
+  color: labelColorSchema,
+});
+
+const labelDeleteSchema = z.object({
+  labelId: z.string().min(1),
+});
+
+// The label-select submits the full set as a single comma-separated hidden field
+// (FormData/toPayload keeps only the last value for a repeated name).
+const setTaskLabelsSchema = z.object({
+  projectId: z.string().min(1),
+  taskId: z.string().min(1),
+  labelIds: z
+    .string()
+    .optional()
+    .transform((value) =>
+      value
+        ? value
+            .split(",")
+            .map((id) => id.trim())
+            .filter(Boolean)
+        : [],
+    ),
+});
+
+export async function createTaskLabelAction(formData: FormData) {
+  const viewer = await requireViewer();
+  const payload = labelCreateSchema.parse(toPayload(formData));
+
+  const { labelId, name, color } = await createTaskLabelService(viewer, payload);
+
+  revalidateProjectViews(payload.projectId, {
+    overview: true,
+    board: true,
+    settings: true,
+  });
+
+  // The label-select client component reads `id` to update its local list.
+  return { id: labelId, name, color };
+}
+
+export async function updateTaskLabelAction(formData: FormData) {
+  const viewer = await requireViewer();
+  const payload = labelUpdateSchema.parse(toPayload(formData));
+
+  const { projectId } = await updateTaskLabelService(viewer, payload);
+
+  revalidateProjectViews(projectId, {
+    overview: true,
+    board: true,
+    settings: true,
+  });
+}
+
+export async function deleteTaskLabelAction(formData: FormData) {
+  const viewer = await requireViewer();
+  const payload = labelDeleteSchema.parse(toPayload(formData));
+
+  const { projectId } = await deleteTaskLabelService(viewer, payload);
+
+  revalidateProjectViews(projectId, {
+    overview: true,
+    board: true,
+    settings: true,
+  });
+}
+
+export async function setTaskLabelsAction(formData: FormData) {
+  const viewer = await requireViewer();
+  const payload = setTaskLabelsSchema.parse(toPayload(formData));
+
+  await setTaskLabelsService(viewer, payload);
+
+  revalidateProjectViews(payload.projectId, { overview: true, board: true });
 }
 
 // ---- Notifications ----------------------------------------------------------

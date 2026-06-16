@@ -79,6 +79,20 @@ import {
   listTaskCommentsInputSchema,
 } from "@/lib/services/comments";
 import {
+  addTaskLabelInputSchema,
+  addTaskLabels,
+  createTaskLabel,
+  createTaskLabelInputSchema,
+  deleteTaskLabel,
+  deleteTaskLabelInputSchema,
+  listTaskLabels,
+  listTaskLabelsInputSchema,
+  removeTaskLabelInputSchema,
+  removeTaskLabels,
+  updateTaskLabel,
+  updateTaskLabelInputSchema,
+} from "@/lib/services/labels";
+import {
   writeProjectNote,
   writeProjectNoteInputSchema,
 } from "@/lib/services/notes";
@@ -238,6 +252,18 @@ function registerReadTools(server: McpServer, viewer: Viewer) {
       annotations: { readOnlyHint: true },
     },
     async (args) => jsonResult(await listTaskCategories(viewer, args)),
+  );
+
+  server.registerTool(
+    "list-task-labels",
+    {
+      title: "List task labels",
+      description:
+        "List a project's task labels (id, name, color, and how many tasks use each). Use this to find label ids before tagging tasks with add-task-label. Returns [] if you can't access the project. Read-only.",
+      inputSchema: listTaskLabelsInputSchema.shape,
+      annotations: { readOnlyHint: true },
+    },
+    async (args) => jsonResult(await listTaskLabels(viewer, args)),
   );
 
   server.registerTool(
@@ -583,6 +609,90 @@ function registerWriteTools(server: McpServer, viewer: Viewer) {
       },
     },
     async (args) => runWrite(() => deleteTaskCategory(viewer, args)),
+  );
+
+  // --- Task labels ----------------------------------------------------------
+  // Multi-tag analog of categories. Defining labels is owner-only; assigning
+  // them to tasks (add/remove) is member-aware. A task may carry many labels.
+
+  server.registerTool(
+    "create-task-label",
+    {
+      title: "Create task label",
+      description:
+        "Create a reusable task label (tag + color swatch) in a project. Project owner only. CONFIRM the name and color with the user. Returns the new labelId — pass it to add-task-label to tag tasks. Names are unique per project.",
+      inputSchema: createTaskLabelInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+      },
+    },
+    async (args) => runWrite(() => createTaskLabel(viewer, args)),
+  );
+
+  server.registerTool(
+    "update-task-label",
+    {
+      title: "Update task label",
+      description:
+        "Rename or recolor a task label. Only the fields you pass change (omit one to keep it). Project owner only. CONFIRM with the user.",
+      inputSchema: updateTaskLabelInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => updateTaskLabel(viewer, args)),
+  );
+
+  server.registerTool(
+    "delete-task-label",
+    {
+      title: "Delete task label",
+      description:
+        "Permanently delete a task label; this also removes it from every task that has it. Project owner only. CONFIRM with the user — this cannot be undone.",
+      inputSchema: deleteTaskLabelInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => deleteTaskLabel(viewer, args)),
+  );
+
+  server.registerTool(
+    "add-task-label",
+    {
+      title: "Add labels to tasks",
+      description:
+        "Add one or more labels to one or more tasks (a task can have many labels) WITHOUT touching other fields. Pass a single task id or many for a bulk tag; adding a label a task already has is a no-op. Get labelIds from list-task-labels. Returns which tasks updated and any that failed. CONFIRM with the user.",
+      inputSchema: addTaskLabelInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => addTaskLabels(viewer, args)),
+  );
+
+  server.registerTool(
+    "remove-task-label",
+    {
+      title: "Remove labels from tasks",
+      description:
+        "Remove one or more labels from one or more tasks WITHOUT touching other fields. Pass a single task id or many for a bulk removal. Returns which tasks updated and any that failed. CONFIRM with the user.",
+      inputSchema: removeTaskLabelInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => removeTaskLabels(viewer, args)),
   );
 
   server.registerTool(
