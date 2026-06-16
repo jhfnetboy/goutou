@@ -11,13 +11,14 @@
 // a category is owner-only, identical to lib/actions.ts (assertProjectOwnership /
 // assertCategoryAccess). No activity logging — the web category actions don't log
 // either, so MCP matches.
-import { and, asc, count, eq } from "drizzle-orm";
+import { asc, count, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import type { Viewer } from "@/lib/auth-server";
 import { canAccessProject } from "@/lib/authz";
 import { getDb } from "@/lib/db";
 import { projects, taskCategories, tasks } from "@/lib/db/schema";
+import { assertProjectOwner } from "@/lib/services/_shared";
 import { isValidProjectColor, PROJECT_SWATCHES } from "@/lib/swatches";
 
 // Default when a caller creates a category without naming a color (the web
@@ -82,22 +83,6 @@ export type DeleteTaskCategoryInput = z.infer<
 >;
 
 // --- Internal helpers --------------------------------------------------------
-
-/**
- * Authority to manage a project's categories: the project owner only — mirrors
- * lib/actions.ts assertProjectOwnership. Opaque "Project not found." so a probe
- * can't distinguish a missing project from one the caller can't manage.
- */
-async function assertProjectOwner(viewer: Viewer, projectId: string) {
-  const db = getDb();
-  const [project] = await db
-    .select()
-    .from(projects)
-    .where(and(eq(projects.id, projectId), eq(projects.ownerId, viewer.id)))
-    .limit(1);
-  if (!project) throw new Error("Project not found.");
-  return project;
-}
 
 /**
  * Resolve a category and assert the viewer owns its project. Opaque

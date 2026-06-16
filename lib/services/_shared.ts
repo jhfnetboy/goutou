@@ -132,6 +132,24 @@ export async function assertProjectAccess(viewer: Viewer, projectId: string) {
   return project;
 }
 
+/**
+ * Owner-only gate for project-scoped management (notes, status updates,
+ * categories, labels) — mirrors the web app's assertProjectOwnership. Uses the
+ * same opaque "Project not found." so a non-owner can't distinguish a missing
+ * project from one they don't own (no existence oracle).
+ */
+export async function assertProjectOwner(viewer: Viewer, projectId: string) {
+  const db = getDb();
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(and(eq(projects.id, projectId), eq(projects.ownerId, viewer.id)))
+    .limit(1);
+
+  if (!project) throw new Error("Project not found.");
+  return project;
+}
+
 export async function resolveAssignee(
   candidate: string | undefined,
   projectId: string,

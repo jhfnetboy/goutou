@@ -38,6 +38,19 @@ import {
   updateTaskCategory as updateTaskCategoryService,
 } from "@/lib/services/categories";
 import {
+  createRequestComment as createRequestCommentService,
+  createTaskComment as createTaskCommentService,
+  deleteRequestComment as deleteRequestCommentService,
+  deleteTaskComment as deleteTaskCommentService,
+  updateRequestComment as updateRequestCommentService,
+  updateTaskComment as updateTaskCommentService,
+} from "@/lib/services/comments";
+import { writeProjectNote as writeProjectNoteService } from "@/lib/services/notes";
+import {
+  deleteStatusUpdate as deleteStatusUpdateService,
+  publishStatusUpdate as publishStatusUpdateService,
+} from "@/lib/services/status-updates";
+import {
   archiveProject as archiveProjectService,
   createProject as createProjectService,
   deleteProject as deleteProjectService,
@@ -57,15 +70,11 @@ import {
   notificationReads,
   notifications,
   priorityValues,
-  projectNotes,
-  projectStatusUpdates,
   projects,
   projectStatusValues,
-  requestComments,
   requestStatusValues,
   taskCategories,
   taskChecklistItems,
-  taskComments,
   tasks,
   taskStatusValues,
   user,
@@ -477,31 +486,6 @@ async function touchTask(taskId: string, updatedAt = new Date()) {
       updatedAt,
     })
     .where(eq(tasks.id, taskId));
-}
-
-async function assertTaskOwnership(
-  taskId: string,
-  projectId: string,
-  ownerId: string,
-) {
-  const db = getDb();
-  const [task] = await db
-    .select()
-    .from(tasks)
-    .where(
-      and(
-        eq(tasks.id, taskId),
-        eq(tasks.projectId, projectId),
-        eq(tasks.ownerId, ownerId),
-      ),
-    )
-    .limit(1);
-
-  if (!task) {
-    throw new Error("Task not found.");
-  }
-
-  return task;
 }
 
 async function getNextChecklistSortOrder(taskId: string) {
@@ -1250,60 +1234,10 @@ export async function deleteTaskAction(formData: FormData) {
 }
 
 export async function saveProjectNoteAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = noteSchema.parse(toPayload(formData));
-  const db = getDb();
-  const now = new Date();
 
-  await assertProjectOwnership(payload.projectId, session.user.id);
-
-  const [existingNote] = await db
-    .select({ content: projectNotes.content })
-    .from(projectNotes)
-    .where(eq(projectNotes.projectId, payload.projectId))
-    .limit(1);
-
-  await db
-    .insert(projectNotes)
-    .values({
-      id: crypto.randomUUID(),
-      ownerId: session.user.id,
-      projectId: payload.projectId,
-      content: payload.content,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: projectNotes.projectId,
-      set: {
-        content: payload.content,
-        ownerId: session.user.id,
-        updatedAt: now,
-      },
-    });
-
-  const changes = diffChanges([
-    {
-      field: "content",
-      label: "Notes",
-      from: existingNote?.content ?? null,
-      to: payload.content,
-      kind: "rich",
-    },
-  ]);
-
-  await touchProject(payload.projectId, now);
-  await logProjectActivity(db, {
-    ownerId: session.user.id,
-    projectId: payload.projectId,
-    entityType: "note",
-    entityId: payload.projectId,
-    action: "updated",
-    label: "Updated notes",
-    detail: payload.content.trim() ? "Project notes changed" : "Cleared project notes",
-    changes,
-    createdAt: now,
-  });
+  await writeProjectNoteService(viewer, payload);
 
   const destination = safeReturnPath(
     payload.returnTo,
@@ -1351,7 +1285,7 @@ export async function createTaskChecklistItemAction(formData: FormData) {
     entityId: payload.taskId,
     action: "created",
     label: "Added subtask",
-    detail: commentExcerpt(payload.content),
+    detail: richExcerpt(payload.content),
     createdAt: now,
   });
 
@@ -1409,7 +1343,7 @@ export async function toggleTaskChecklistItemAction(formData: FormData) {
     entityId: payload.taskId,
     action: "updated",
     label: nextIsCompleted ? "Completed subtask" : "Reopened subtask",
-    detail: commentExcerpt(existingItem.content),
+    detail: richExcerpt(existingItem.content),
     changes: diffChanges([
       {
         field: "state",
@@ -1471,7 +1405,7 @@ export async function deleteTaskChecklistItemAction(formData: FormData) {
       entityId: payload.taskId,
       action: "deleted",
       label: "Removed subtask",
-      detail: commentExcerpt(removedItem.content),
+      detail: richExcerpt(removedItem.content),
       createdAt: now,
     });
   }
@@ -1485,56 +1419,10 @@ export async function deleteTaskChecklistItemAction(formData: FormData) {
 }
 
 export async function saveTaskStatusUpdateAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = taskStatusUpdateSchema.parse(toPayload(formData));
-  const db = getDb();
-  const now = new Date();
-  const task = await assertTaskOwnership(
-    payload.taskId,
-    payload.projectId,
-    session.user.id,
-  );
 
-  await assertProjectOwnership(payload.projectId, session.user.id);
-
-  if (task.status !== "done") {
-    throw new Error("Only completed tasks can be published as client updates.");
-  }
-
-  await db
-    .insert(projectStatusUpdates)
-    .values({
-      id: crypto.randomUUID(),
-      ownerId: session.user.id,
-      projectId: payload.projectId,
-      taskId: payload.taskId,
-      summary: payload.summary,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: projectStatusUpdates.taskId,
-      set: {
-        summary: payload.summary,
-        updatedAt: now,
-      },
-    });
-
-  await Promise.all([
-    touchTask(payload.taskId, now),
-    touchProject(payload.projectId, now),
-  ]);
-
-  await logProjectActivity(db, {
-    ownerId: session.user.id,
-    projectId: payload.projectId,
-    entityType: "task",
-    entityId: payload.taskId,
-    action: "updated",
-    label: "Published client update",
-    detail: task.title,
-    createdAt: now,
-  });
+  await publishStatusUpdateService(viewer, payload);
 
   revalidateProjectViews(payload.projectId, {
     projects: true,
@@ -1551,42 +1439,10 @@ export async function saveTaskStatusUpdateAction(formData: FormData) {
 }
 
 export async function deleteTaskStatusUpdateAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = taskStatusUpdateDeleteSchema.parse(toPayload(formData));
-  const db = getDb();
-  const now = new Date();
-  const task = await assertTaskOwnership(
-    payload.taskId,
-    payload.projectId,
-    session.user.id,
-  );
 
-  await assertProjectOwnership(payload.projectId, session.user.id);
-
-  await db
-    .delete(projectStatusUpdates)
-    .where(
-      and(
-        eq(projectStatusUpdates.taskId, payload.taskId),
-        eq(projectStatusUpdates.ownerId, session.user.id),
-      ),
-    );
-
-  await Promise.all([
-    touchTask(payload.taskId, now),
-    touchProject(payload.projectId, now),
-  ]);
-
-  await logProjectActivity(db, {
-    ownerId: session.user.id,
-    projectId: payload.projectId,
-    entityType: "task",
-    entityId: payload.taskId,
-    action: "updated",
-    label: "Removed client update",
-    detail: task.title,
-    createdAt: now,
-  });
+  await deleteStatusUpdateService(viewer, payload);
 
   revalidateProjectViews(payload.projectId, {
     projects: true,
@@ -1626,7 +1482,10 @@ const commentDeleteSchema = z.object({
   commentId: z.string().min(1),
 });
 
-function commentExcerpt(content: string): string {
+// Short plain-text preview of rich-text content for an activity-log detail line.
+// Used by the checklist web actions below (comment excerpts now live in the
+// comments service).
+function richExcerpt(content: string): string {
   const text = richTextToPlainText(parseRichText(content));
   if (text.length <= 80) return text;
   return `${text.slice(0, 77).trimEnd()}…`;
@@ -1635,39 +1494,11 @@ function commentExcerpt(content: string): string {
 export async function createTaskCommentAction(formData: FormData) {
   const viewer = await requireViewer();
   const payload = commentCreateSchema.parse(toPayload(formData));
-  if (!(await canAccessProject(viewer, payload.projectId))) {
-    throw new Error("Not authorized.");
-  }
-  const db = getDb();
-  const now = new Date();
-  const [task] = await db
-    .select({ id: tasks.id, title: tasks.title })
-    .from(tasks)
-    .where(and(eq(tasks.id, payload.parentId), eq(tasks.projectId, payload.projectId)))
-    .limit(1);
-  if (!task) throw new Error("Task not found.");
 
-  const commentId = crypto.randomUUID();
-  await db.insert(taskComments).values({
-    id: commentId,
+  await createTaskCommentService(viewer, {
     projectId: payload.projectId,
-    taskId: task.id,
-    authorId: viewer.id,
+    taskId: payload.parentId,
     content: payload.content,
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  await touchProject(payload.projectId, now);
-  await logProjectActivity(db, {
-    ownerId: viewer.id,
-    projectId: payload.projectId,
-    entityType: "task",
-    entityId: task.id,
-    action: "created",
-    label: "Commented on task",
-    detail: commentExcerpt(payload.content) || task.title,
-    createdAt: now,
   });
 
   revalidateProjectViews(payload.projectId, {
@@ -1680,128 +1511,29 @@ export async function createTaskCommentAction(formData: FormData) {
 export async function updateTaskCommentAction(formData: FormData) {
   const viewer = await requireViewer();
   const payload = commentUpdateSchema.parse(toPayload(formData));
-  const db = getDb();
-  const [comment] = await db
-    .select()
-    .from(taskComments)
-    .where(eq(taskComments.id, payload.commentId))
-    .limit(1);
-  if (!comment) throw new Error("Comment not found.");
-  if (comment.authorId !== viewer.id) {
-    throw new Error("You can only edit your own comment.");
-  }
-  if (!(await canAccessProject(viewer, comment.projectId))) {
-    throw new Error("Not authorized.");
-  }
 
-  const now = new Date();
-  await db
-    .update(taskComments)
-    .set({ content: payload.content, updatedAt: now })
-    .where(eq(taskComments.id, comment.id));
+  const { projectId } = await updateTaskCommentService(viewer, payload);
 
-  const changes = diffChanges([
-    {
-      field: "comment",
-      label: "Comment",
-      from: comment.content,
-      to: payload.content,
-      kind: "rich",
-    },
-  ]);
-  if (changes) {
-    await logProjectActivity(db, {
-      ownerId: viewer.id,
-      projectId: comment.projectId,
-      entityType: "task",
-      entityId: comment.taskId,
-      action: "updated",
-      label: "Edited comment",
-      detail: commentExcerpt(payload.content),
-      changes,
-      createdAt: now,
-    });
-  }
-
-  revalidateProjectViews(comment.projectId, { overview: true, board: true });
+  revalidateProjectViews(projectId, { overview: true, board: true });
 }
 
 export async function deleteTaskCommentAction(formData: FormData) {
   const viewer = await requireViewer();
   const payload = commentDeleteSchema.parse(toPayload(formData));
-  const db = getDb();
-  const [comment] = await db
-    .select()
-    .from(taskComments)
-    .where(eq(taskComments.id, payload.commentId))
-    .limit(1);
-  if (!comment) return;
-  const isOwn = comment.authorId === viewer.id;
-  const isAdmin = isAdminTier(viewer.role);
-  if (!isOwn && !isAdmin) {
-    throw new Error("You can only delete your own comment.");
-  }
-  if (!(await canAccessProject(viewer, comment.projectId))) {
-    throw new Error("Not authorized.");
-  }
 
-  await db.delete(taskComments).where(eq(taskComments.id, comment.id));
+  const { projectId } = await deleteTaskCommentService(viewer, payload);
 
-  await logProjectActivity(db, {
-    ownerId: viewer.id,
-    projectId: comment.projectId,
-    entityType: "task",
-    entityId: comment.taskId,
-    action: "deleted",
-    label: "Removed comment",
-    detail: commentExcerpt(comment.content),
-    createdAt: new Date(),
-  });
-
-  revalidateProjectViews(comment.projectId, { overview: true, board: true });
+  if (projectId) revalidateProjectViews(projectId, { overview: true, board: true });
 }
 
 export async function createRequestCommentAction(formData: FormData) {
   const viewer = await requireViewer();
   const payload = commentCreateSchema.parse(toPayload(formData));
-  if (!(await canAccessProject(viewer, payload.projectId))) {
-    throw new Error("Not authorized.");
-  }
-  const db = getDb();
-  const now = new Date();
-  const [request] = await db
-    .select({ id: clientRequests.id, title: clientRequests.title })
-    .from(clientRequests)
-    .where(
-      and(
-        eq(clientRequests.id, payload.parentId),
-        eq(clientRequests.projectId, payload.projectId),
-      ),
-    )
-    .limit(1);
-  if (!request) throw new Error("Request not found.");
 
-  const commentId = crypto.randomUUID();
-  await db.insert(requestComments).values({
-    id: commentId,
+  await createRequestCommentService(viewer, {
     projectId: payload.projectId,
-    requestId: request.id,
-    authorId: viewer.id,
+    requestId: payload.parentId,
     content: payload.content,
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  await touchProject(payload.projectId, now);
-  await logProjectActivity(db, {
-    ownerId: viewer.id,
-    projectId: payload.projectId,
-    entityType: "request",
-    entityId: request.id,
-    action: "created",
-    label: "Commented on request",
-    detail: commentExcerpt(payload.content) || request.title,
-    createdAt: now,
   });
 
   revalidateProjectViews(payload.projectId, {
@@ -1814,85 +1546,19 @@ export async function createRequestCommentAction(formData: FormData) {
 export async function updateRequestCommentAction(formData: FormData) {
   const viewer = await requireViewer();
   const payload = commentUpdateSchema.parse(toPayload(formData));
-  const db = getDb();
-  const [comment] = await db
-    .select()
-    .from(requestComments)
-    .where(eq(requestComments.id, payload.commentId))
-    .limit(1);
-  if (!comment) throw new Error("Comment not found.");
-  if (comment.authorId !== viewer.id) {
-    throw new Error("You can only edit your own comment.");
-  }
-  if (!(await canAccessProject(viewer, comment.projectId))) {
-    throw new Error("Not authorized.");
-  }
 
-  const now = new Date();
-  await db
-    .update(requestComments)
-    .set({ content: payload.content, updatedAt: now })
-    .where(eq(requestComments.id, comment.id));
+  const { projectId } = await updateRequestCommentService(viewer, payload);
 
-  const changes = diffChanges([
-    {
-      field: "comment",
-      label: "Comment",
-      from: comment.content,
-      to: payload.content,
-      kind: "rich",
-    },
-  ]);
-  if (changes) {
-    await logProjectActivity(db, {
-      ownerId: viewer.id,
-      projectId: comment.projectId,
-      entityType: "request",
-      entityId: comment.requestId,
-      action: "updated",
-      label: "Edited comment",
-      detail: commentExcerpt(payload.content),
-      changes,
-      createdAt: now,
-    });
-  }
-
-  revalidateProjectViews(comment.projectId, { overview: true, requests: true });
+  revalidateProjectViews(projectId, { overview: true, requests: true });
 }
 
 export async function deleteRequestCommentAction(formData: FormData) {
   const viewer = await requireViewer();
   const payload = commentDeleteSchema.parse(toPayload(formData));
-  const db = getDb();
-  const [comment] = await db
-    .select()
-    .from(requestComments)
-    .where(eq(requestComments.id, payload.commentId))
-    .limit(1);
-  if (!comment) return;
-  const isOwn = comment.authorId === viewer.id;
-  const isAdmin = isAdminTier(viewer.role);
-  if (!isOwn && !isAdmin) {
-    throw new Error("You can only delete your own comment.");
-  }
-  if (!(await canAccessProject(viewer, comment.projectId))) {
-    throw new Error("Not authorized.");
-  }
 
-  await db.delete(requestComments).where(eq(requestComments.id, comment.id));
+  const { projectId } = await deleteRequestCommentService(viewer, payload);
 
-  await logProjectActivity(db, {
-    ownerId: viewer.id,
-    projectId: comment.projectId,
-    entityType: "request",
-    entityId: comment.requestId,
-    action: "deleted",
-    label: "Removed comment",
-    detail: commentExcerpt(comment.content),
-    createdAt: new Date(),
-  });
-
-  revalidateProjectViews(comment.projectId, { overview: true, requests: true });
+  if (projectId) revalidateProjectViews(projectId, { overview: true, requests: true });
 }
 
 // ---- Task categories --------------------------------------------------------

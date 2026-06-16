@@ -65,6 +65,30 @@ import {
   updateProjectInputSchema,
 } from "@/lib/services/projects";
 import {
+  addRequestCommentInputSchema,
+  addTaskCommentInputSchema,
+  createRequestComment,
+  createTaskComment,
+  deleteRequestComment,
+  deleteRequestCommentInputSchema,
+  deleteTaskComment,
+  deleteTaskCommentInputSchema,
+  listRequestComments,
+  listRequestCommentsInputSchema,
+  listTaskComments,
+  listTaskCommentsInputSchema,
+} from "@/lib/services/comments";
+import {
+  writeProjectNote,
+  writeProjectNoteInputSchema,
+} from "@/lib/services/notes";
+import {
+  deleteStatusUpdate,
+  deleteStatusUpdateInputSchema,
+  publishStatusUpdate,
+  publishStatusUpdateInputSchema,
+} from "@/lib/services/status-updates";
+import {
   listDailyTasks,
   listProjectActivity,
   listProjects,
@@ -241,6 +265,30 @@ function registerReadTools(server: McpServer, viewer: Viewer) {
       annotations: { readOnlyHint: true },
     },
     async (args) => jsonResult(await readRequest(viewer, args)),
+  );
+
+  server.registerTool(
+    "list-task-comments",
+    {
+      title: "List task comments",
+      description:
+        "List the comment thread on a task (author, text, timestamps), oldest first. Returns [] if you can't access the project. Read-only.",
+      inputSchema: listTaskCommentsInputSchema.shape,
+      annotations: { readOnlyHint: true },
+    },
+    async (args) => jsonResult(await listTaskComments(viewer, args)),
+  );
+
+  server.registerTool(
+    "list-request-comments",
+    {
+      title: "List request comments",
+      description:
+        "List the comment thread on a client request (author, text, timestamps), oldest first. Returns [] if you can't access the project. Read-only.",
+      inputSchema: listRequestCommentsInputSchema.shape,
+      annotations: { readOnlyHint: true },
+    },
+    async (args) => jsonResult(await listRequestComments(viewer, args)),
   );
 
   server.registerTool(
@@ -747,6 +795,124 @@ function registerWriteTools(server: McpServer, viewer: Viewer) {
       },
     },
     async (args) => runWrite(() => rotateClientShareToken(viewer, args)),
+  );
+
+  // --- Project notes & client status updates --------------------------------
+
+  server.registerTool(
+    "write-project-notes",
+    {
+      title: "Write project notes",
+      description:
+        "Set a project's notes scratchpad (plain text; replaces the whole note — read it first with read-project-notes if appending). Pass an empty string to clear. Project owner only. CONFIRM with the user.",
+      inputSchema: writeProjectNoteInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => writeProjectNote(viewer, args)),
+  );
+
+  server.registerTool(
+    "publish-status-update",
+    {
+      title: "Publish client status update",
+      description:
+        "Publish (or replace) the client-facing status update for a COMPLETED task — the summary clients see on the public board. The task must be done; one update per task. Owner only. CONFIRM with the user.",
+      inputSchema: publishStatusUpdateInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => publishStatusUpdate(viewer, args)),
+  );
+
+  server.registerTool(
+    "delete-status-update",
+    {
+      title: "Delete client status update",
+      description:
+        "Remove a task's published client status update. Owner only. CONFIRM with the user.",
+      inputSchema: deleteStatusUpdateInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => deleteStatusUpdate(viewer, args)),
+  );
+
+  // --- Comments -------------------------------------------------------------
+  // Any project member can add a comment; deleting is author-or-admin. Content
+  // accepts Markdown (normalized to rich text), like task/request descriptions.
+
+  server.registerTool(
+    "add-task-comment",
+    {
+      title: "Add task comment",
+      description:
+        "Post a comment on a task. Any project member may comment. Markdown is accepted. CONFIRM the content with the user before calling. Returns the new commentId.",
+      inputSchema: addTaskCommentInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+      },
+    },
+    async (args) => runWrite(() => createTaskComment(viewer, args)),
+  );
+
+  server.registerTool(
+    "delete-task-comment",
+    {
+      title: "Delete task comment",
+      description:
+        "Delete a task comment by id. You can delete your own comment; workspace admins can delete any. CONFIRM with the user — this cannot be undone.",
+      inputSchema: deleteTaskCommentInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => deleteTaskComment(viewer, args)),
+  );
+
+  server.registerTool(
+    "add-request-comment",
+    {
+      title: "Add request comment",
+      description:
+        "Post a comment on a client request. Any project member may comment. Markdown is accepted. CONFIRM the content with the user before calling. Returns the new commentId.",
+      inputSchema: addRequestCommentInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+      },
+    },
+    async (args) => runWrite(() => createRequestComment(viewer, args)),
+  );
+
+  server.registerTool(
+    "delete-request-comment",
+    {
+      title: "Delete request comment",
+      description:
+        "Delete a client-request comment by id. You can delete your own comment; workspace admins can delete any. CONFIRM with the user — this cannot be undone.",
+      inputSchema: deleteRequestCommentInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => deleteRequestComment(viewer, args)),
   );
 
   // --- Members --------------------------------------------------------------
