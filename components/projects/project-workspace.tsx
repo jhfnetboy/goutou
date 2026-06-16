@@ -187,9 +187,13 @@ export function ProjectMetricsStrip({
 export function ProjectBoardSurface({
   workspace,
   currentPath,
+  // Overview renders a compact preview (top cards + "Show more" → full board);
+  // the Board tab renders the full, draggable, filterable board.
+  preview = false,
 }: {
   workspace: ProjectWorkspace;
   currentPath: string;
+  preview?: boolean;
 }) {
   const publishedTaskIds = new Set(
     workspace.statusUpdates.map((update) => update.taskId),
@@ -200,15 +204,25 @@ export function ProjectBoardSurface({
         `${task.id}:${task.status}:${task.sortOrder}:${task.updatedAt.getTime()}:${publishedTaskIds.has(task.id)}`,
     )
     .join("|");
+  const boardPath = `/projects/${workspace.project.id}/board`;
 
   return (
     <SectionFrame>
       <SectionHeader
         eyebrow="Board"
         title="Execution board"
-        description="Keep the board visible as the operating surface. Open tasks in modals when you need to adjust details."
+        description={
+          preview
+            ? "The top of the board at a glance. Open the board tab for the full, filterable surface."
+            : "Keep the board visible as the operating surface. Open tasks in modals when you need to adjust details."
+        }
         action={
           <div className="flex flex-wrap gap-2">
+            {preview ? (
+              <Link href={boardPath} className="ui-button-secondary">
+                Open board
+              </Link>
+            ) : null}
             <ProjectWorkspaceModalTrigger
               modal="new-task"
               className="ui-button-primary"
@@ -223,6 +237,9 @@ export function ProjectBoardSurface({
         key={boardKey}
         projectId={workspace.project.id}
         taskHrefBase={currentPath}
+        showFilters={!preview}
+        previewLimit={preview ? 5 : undefined}
+        showMoreHref={preview ? boardPath : undefined}
         tasks={workspace.tasks.map((task) => {
           const assignee = workspace.members.find(
             (m) => m.userId === task.assigneeId,

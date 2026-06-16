@@ -37,7 +37,7 @@ export default async function ProjectOverviewPage({
       <ProjectMetricsStrip workspace={workspace} />
 
       <div className="grid gap-6 xl:grid-cols-[1.45fr_0.55fr]">
-        <ProjectBoardSurface workspace={workspace} currentPath={currentPath} />
+        <ProjectBoardSurface workspace={workspace} currentPath={currentPath} preview />
         <ProjectNotesSurface workspace={workspace} currentPath={currentPath} />
       </div>
 
