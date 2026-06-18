@@ -8,6 +8,8 @@ import { getDb } from "@/lib/db";
 import {
   projectMembers,
   projects,
+  spaceMembers,
+  spaces,
   type ProjectMemberRole,
   type UserRole,
 } from "@/lib/db/schema";
@@ -21,6 +23,29 @@ type ViewerInput = { id: string; role: UserRole };
 export type ProjectRole = "owner" | "leader" | "member";
 
 /**
+ * The COMPANY space ids the user is a member of. This is the one shared
+ * predicate behind the Spaces access tier: being a member of a company space
+ * grants baseline access to every project in it. Encoded ONCE here and applied
+ * at both access chokepoints (getPersonalProjectIds for lists,
+ * canAccessProject/getProjectRole for single projects) so a project can never
+ * appear in a list it would 403 on, or be openable yet invisible. Personal
+ * spaces are never returned here, so they stay owner-only.
+ */
+export const getCompanySpaceIds = cache(
+  async (userId: string): Promise<string[]> => {
+    const db = getDb();
+    const rows = await db
+      .select({ id: spaceMembers.spaceId })
+      .from(spaceMembers)
+      .innerJoin(spaces, eq(spaces.id, spaceMembers.spaceId))
+      .where(
+        and(eq(spaceMembers.userId, userId), eq(spaces.kind, "company")),
+      );
+    return rows.map((row) => row.id);
+  },
+);
+
+/**
  * Projects the user has a direct relationship with — they own it OR they're
  * in project_members. Used by personal pages (/dashboard, /today, /projects
  * list, sidebar) regardless of viewer role.
@@ -28,7 +53,8 @@ export type ProjectRole = "owner" | "leader" | "member";
 export const getPersonalProjectIds = cache(
   async (userId: string): Promise<string[]> => {
     const db = getDb();
-    const [owned, memberOf] = await Promise.all([
+    const companySpaceIds = await getCompanySpaceIds(userId);
+    const [owned, memberOf, spaceProjects] = await Promise.all([
       db
         .select({ id: projects.id })
         .from(projects)
@@ -37,8 +63,21 @@ export const getPersonalProjectIds = cache(
         .select({ id: projectMembers.projectId })
         .from(projectMembers)
         .where(eq(projectMembers.userId, userId)),
+      // Every project in a company space the user belongs to.
+      companySpaceIds.length
+        ? db
+            .select({ id: projects.id })
+            .from(projects)
+            .where(inArray(projects.spaceId, companySpaceIds))
+        : Promise.resolve([] as { id: string }[]),
     ]);
-    return [...new Set([...owned.map((r) => r.id), ...memberOf.map((r) => r.id)])];
+    return [
+      ...new Set([
+        ...owned.map((r) => r.id),
+        ...memberOf.map((r) => r.id),
+        ...spaceProjects.map((r) => r.id),
+      ]),
+    ];
   },
 );
 
@@ -55,7 +94,7 @@ export async function canAccessProject(
 
   const db = getDb();
   const [project] = await db
-    .select({ ownerId: projects.ownerId })
+    .select({ ownerId: projects.ownerId, spaceId: projects.spaceId })
     .from(projects)
     .where(eq(projects.id, projectId))
     .limit(1);
@@ -72,8 +111,16 @@ export async function canAccessProject(
       ),
     )
     .limit(1);
+  if (member) return true;
 
-  return Boolean(member);
+  // Baseline access via the project's company space (Personal spaces never
+  // appear in getCompanySpaceIds, so they stay owner-only).
+  if (project.spaceId) {
+    const companySpaceIds = await getCompanySpaceIds(viewer.id);
+    if (companySpaceIds.includes(project.spaceId)) return true;
+  }
+
+  return false;
 }
 
 /**
@@ -89,7 +136,7 @@ export async function getProjectRole(
 
   const db = getDb();
   const [project] = await db
-    .select({ ownerId: projects.ownerId })
+    .select({ ownerId: projects.ownerId, spaceId: projects.spaceId })
     .from(projects)
     .where(eq(projects.id, projectId))
     .limit(1);
@@ -106,7 +153,16 @@ export async function getProjectRole(
       ),
     )
     .limit(1);
-  return (member?.role as ProjectMemberRole | undefined) ?? null;
+  if (member?.role) return member.role as ProjectMemberRole;
+
+  // No explicit role, but a member of the project's company space → baseline
+  // "member". Personal-space projects never match (owner-only).
+  if (project.spaceId) {
+    const companySpaceIds = await getCompanySpaceIds(viewer.id);
+    if (companySpaceIds.includes(project.spaceId)) return "member";
+  }
+
+  return null;
 }
 
 /**
@@ -136,48 +192,69 @@ export async function canAdministerProject(
 }
 
 /**
- * Returns the project IDs a viewer can see.
- * - Admin tier (owner/admin): every project.
- * - Member: only projects they're explicitly a member of.
- *
- * Phase 1 ships this helper; Phase 2 wires it into lib/data.ts queries.
+ * Project IDs a viewer can see. Admin tier → every project; otherwise the full
+ * personal set (owned + explicit membership + company-space projects). Delegates
+ * to getPersonalProjectIds so it can never diverge into a narrower rule that
+ * would bypass the space tier.
  */
 export async function visibleProjectIds(
   viewer: ViewerInput,
 ): Promise<string[]> {
-  const db = getDb();
-
   if (isAdminTier(viewer.role)) {
+    const db = getDb();
     const rows = await db.select({ id: projects.id }).from(projects);
     return rows.map((row) => row.id);
   }
-
-  const rows = await db
-    .select({ id: projectMembers.projectId })
-    .from(projectMembers)
-    .where(eq(projectMembers.userId, viewer.id));
-  return rows.map((row) => row.id);
+  return getPersonalProjectIds(viewer.id);
 }
 
+// Delegates to canAccessProject (same rule: admin / owner / explicit role /
+// company-space member) so visibility can't diverge from access.
 export async function canViewProject(
   viewer: ViewerInput,
   projectId: string,
 ): Promise<boolean> {
+  return canAccessProject(viewer, projectId);
+}
+
+/**
+ * Manage a COMPANY space (rename, delete, members, set lead): workspace admin OR
+ * the space's lead. Personal spaces aren't "managed" — they're the owner's.
+ */
+export async function canManageSpace(
+  viewer: ViewerInput,
+  spaceId: string,
+): Promise<boolean> {
   if (isAdminTier(viewer.role)) return true;
-
   const db = getDb();
-  const [row] = await db
-    .select({ id: projectMembers.id })
-    .from(projectMembers)
-    .where(
-      and(
-        eq(projectMembers.projectId, projectId),
-        eq(projectMembers.userId, viewer.id),
-      ),
-    )
+  const [space] = await db
+    .select({ kind: spaces.kind, leadId: spaces.leadId })
+    .from(spaces)
+    .where(eq(spaces.id, spaceId))
     .limit(1);
+  if (!space) return false;
+  return space.kind === "company" && space.leadId === viewer.id;
+}
 
-  return Boolean(row);
+/**
+ * Create a project IN a space: the owner of a Personal space, or (for a Company
+ * space) the lead / a workspace admin. Drives the create-modal picker + guards
+ * a forged spaceId on create/move.
+ */
+export async function canPostToSpace(
+  viewer: ViewerInput,
+  spaceId: string,
+): Promise<boolean> {
+  if (isAdminTier(viewer.role)) return true;
+  const db = getDb();
+  const [space] = await db
+    .select({ kind: spaces.kind, ownerId: spaces.ownerId, leadId: spaces.leadId })
+    .from(spaces)
+    .where(eq(spaces.id, spaceId))
+    .limit(1);
+  if (!space) return false;
+  if (space.kind === "personal") return space.ownerId === viewer.id;
+  return space.leadId === viewer.id;
 }
 
 export async function canEditProject(
