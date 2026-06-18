@@ -87,13 +87,6 @@ export default async function ProjectMembersPage({ params }: PageProps) {
         <h1 className="mt-2 text-[24px] font-medium tracking-[-0.022em] text-foreground">
           {project.name} — Members
         </h1>
-        <p className="mt-1 max-w-prose text-[13px] leading-6 text-muted">
-          <strong className="text-foreground">Leaders</strong> run the project
-          (settings, labels, client updates, and adding members);{" "}
-          <strong className="text-foreground">Members</strong> do the task and
-          request work. The owner has full control. Add someone by their account
-          email — they must have signed up via invite first.
-        </p>
       </div>
 
       <MembersManager

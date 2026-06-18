@@ -124,7 +124,16 @@ export function MembersManager({
           <p className="font-mono text-[11px] uppercase tracking-[0.04em] text-muted">
             Add member
           </p>
-          <div className="mt-3 flex flex-wrap gap-3">
+          <p className="mt-1 text-[12px] leading-5 text-muted">
+            <span className="font-medium text-foreground">Leaders</span> run the
+            project; <span className="font-medium text-foreground">Members</span>{" "}
+            do the work. The email must belong to an existing account — invite
+            them from{" "}
+            <span className="font-medium text-foreground">/admin/invites</span>{" "}
+            first.
+            {canAdminister ? " Only you can grant the Leader role." : null}
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
             <input
               type="email"
               value={email}
@@ -134,24 +143,26 @@ export function MembersManager({
               disabled={isPending}
             />
             {canAdminister ? (
-              <select
-                value={addRole}
-                onChange={(e) =>
-                  setAddRole(e.target.value as "member" | "leader")
-                }
-                aria-label="Role for the new member"
-                className="ui-select w-32"
-                disabled={isPending}
-              >
-                <option value="member">Member</option>
-                <option value="leader">Leader</option>
-              </select>
+              <div className="w-32 shrink-0">
+                <select
+                  value={addRole}
+                  onChange={(e) =>
+                    setAddRole(e.target.value as "member" | "leader")
+                  }
+                  aria-label="Role for the new member"
+                  className="ui-select"
+                  disabled={isPending}
+                >
+                  <option value="member">Member</option>
+                  <option value="leader">Leader</option>
+                </select>
+              </div>
             ) : null}
             <button
               type="button"
               onClick={addMember}
               disabled={isPending || !email.trim()}
-              className="ui-button-primary disabled:cursor-not-allowed disabled:opacity-60"
+              className="ui-button-primary shrink-0 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isPending ? (
                 <CircleNotch className="size-4 animate-spin" />
@@ -161,14 +172,6 @@ export function MembersManager({
               Add
             </button>
           </div>
-          <p className="mt-3 text-[12px] leading-5 text-muted">
-            The email must belong to an existing account. Send them an invite from{" "}
-            <span className="font-medium text-foreground">/admin/invites</span>{" "}
-            first if they haven&apos;t signed up.
-            {canAdminister
-              ? " Only you (the owner) can grant the Leader role."
-              : null}
-          </p>
         </div>
       ) : (
         <div className="rounded-md border border-dashed border-border bg-surface px-4 py-3 text-[12px] leading-5 text-muted">
@@ -226,7 +229,7 @@ export function MembersManager({
             return (
               <div
                 key={m.membershipId}
-                className="flex flex-wrap items-center gap-3 px-4 py-3"
+                className="flex items-center gap-3 px-4 py-3"
               >
                 <Avatar
                   name={m.name}
@@ -254,32 +257,36 @@ export function MembersManager({
                     {m.email} · added {m.addedAt.toLocaleDateString()}
                   </p>
                 </div>
-                {canAdminister ? (
-                  <select
-                    value={m.projectRole === "leader" ? "leader" : "member"}
-                    onChange={(e) =>
-                      changeRole(m.userId, e.target.value as ProjectRole)
-                    }
-                    aria-label={`Role for ${m.name}`}
-                    className="ui-select w-28"
-                    disabled={isPending}
-                  >
-                    <option value="member">Member</option>
-                    <option value="leader">Leader</option>
-                  </select>
-                ) : null}
-                {canRemove ? (
-                  <button
-                    type="button"
-                    onClick={() => removeMember(m.userId)}
-                    disabled={isPending}
-                    className="ui-button-ghost"
-                    title="Remove member"
-                    aria-label="Remove member"
-                  >
-                    <Trash className="size-4" />
-                  </button>
-                ) : null}
+                <div className="flex shrink-0 items-center gap-2">
+                  {canAdminister ? (
+                    <div className="w-28">
+                      <select
+                        value={m.projectRole === "leader" ? "leader" : "member"}
+                        onChange={(e) =>
+                          changeRole(m.userId, e.target.value as ProjectRole)
+                        }
+                        aria-label={`Role for ${m.name}`}
+                        className="ui-select"
+                        disabled={isPending}
+                      >
+                        <option value="member">Member</option>
+                        <option value="leader">Leader</option>
+                      </select>
+                    </div>
+                  ) : null}
+                  {canRemove ? (
+                    <button
+                      type="button"
+                      onClick={() => removeMember(m.userId)}
+                      disabled={isPending}
+                      className="ui-button-ghost"
+                      title="Remove member"
+                      aria-label="Remove member"
+                    >
+                      <Trash className="size-4" />
+                    </button>
+                  ) : null}
+                </div>
               </div>
             );
           })}
