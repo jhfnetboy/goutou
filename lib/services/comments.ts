@@ -15,7 +15,7 @@ import { z } from "zod";
 import { logProjectActivity } from "@/lib/activity";
 import { diffChanges } from "@/lib/activity-diff";
 import { isAdminTier, type Viewer } from "@/lib/auth-server";
-import { canAccessProject } from "@/lib/authz";
+import { canAccessProject, canProjectCapability } from "@/lib/authz";
 import { getDb } from "@/lib/db";
 import {
   clientRequests,
@@ -168,7 +168,7 @@ export async function createTaskComment(
   viewer: Viewer,
   input: AddTaskCommentInput,
 ): Promise<{ commentId: string; projectId: string }> {
-  if (!(await canAccessProject(viewer, input.projectId))) {
+  if (!(await canProjectCapability(viewer, input.projectId, "comment.write"))) {
     throw new Error("Not authorized.");
   }
   const db = getDb();
@@ -223,7 +223,7 @@ export async function updateTaskComment(
   if (comment.authorId !== viewer.id) {
     throw new Error("You can only edit your own comment.");
   }
-  if (!(await canAccessProject(viewer, comment.projectId))) {
+  if (!(await canProjectCapability(viewer, comment.projectId, "comment.write"))) {
     throw new Error("Not authorized.");
   }
 
@@ -267,7 +267,7 @@ export async function deleteTaskComment(
   if (comment.authorId !== viewer.id && !isAdminTier(viewer.role)) {
     throw new Error("You can only delete your own comment.");
   }
-  if (!(await canAccessProject(viewer, comment.projectId))) {
+  if (!(await canProjectCapability(viewer, comment.projectId, "comment.write"))) {
     throw new Error("Not authorized.");
   }
 
@@ -328,7 +328,7 @@ export async function createRequestComment(
   viewer: Viewer,
   input: AddRequestCommentInput,
 ): Promise<{ commentId: string; projectId: string }> {
-  if (!(await canAccessProject(viewer, input.projectId))) {
+  if (!(await canProjectCapability(viewer, input.projectId, "comment.write"))) {
     throw new Error("Not authorized.");
   }
   const db = getDb();
@@ -388,7 +388,7 @@ export async function updateRequestComment(
   if (comment.authorId !== viewer.id) {
     throw new Error("You can only edit your own comment.");
   }
-  if (!(await canAccessProject(viewer, comment.projectId))) {
+  if (!(await canProjectCapability(viewer, comment.projectId, "comment.write"))) {
     throw new Error("Not authorized.");
   }
 
@@ -432,7 +432,7 @@ export async function deleteRequestComment(
   if (comment.authorId !== viewer.id && !isAdminTier(viewer.role)) {
     throw new Error("You can only delete your own comment.");
   }
-  if (!(await canAccessProject(viewer, comment.projectId))) {
+  if (!(await canProjectCapability(viewer, comment.projectId, "comment.write"))) {
     throw new Error("Not authorized.");
   }
 

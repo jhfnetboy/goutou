@@ -10,6 +10,9 @@ import {
   canAccessProject,
   canAdministerProject,
   canManageProject,
+  getProjectMemberPermissions,
+  getProjectRole,
+  type ProjectCapability,
 } from "@/lib/authz";
 import { getDb } from "@/lib/db";
 import {
@@ -189,6 +192,37 @@ export async function assertProjectAdminister(viewer: Viewer, projectId: string)
   if (!project) throw new Error("Project not found.");
   if (!(await canAdministerProject(viewer, projectId))) {
     throw new Error("Project not found.");
+  }
+  return project;
+}
+
+/**
+ * Capability gate for the per-project "Member Access" RBAC. Owner / leader /
+ * admin always pass (never gated by the toggles); a Member passes only if the
+ * project's resolved toggle for `capability` is on. Distinguishes the two
+ * failure modes: no access at all → opaque "Project not found." (no existence
+ * oracle); has access but the toggle is off → a clear permission error.
+ */
+export async function assertProjectCapability(
+  viewer: Viewer,
+  projectId: string,
+  capability: ProjectCapability,
+) {
+  const db = getDb();
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+  if (!project) throw new Error("Project not found.");
+
+  const role = await getProjectRole(viewer, projectId);
+  if (role === null) throw new Error("Project not found.");
+  if (role === "owner" || role === "leader") return project;
+
+  const perms = await getProjectMemberPermissions(projectId);
+  if (perms[capability] !== true) {
+    throw new Error("You don't have permission for this action on this project.");
   }
   return project;
 }

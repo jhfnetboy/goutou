@@ -16,7 +16,7 @@ import type { Viewer } from "@/lib/auth-server";
 import { getDb } from "@/lib/db";
 import { projectStatusUpdates } from "@/lib/db/schema";
 import {
-  assertProjectManage,
+  assertProjectCapability,
   assertTaskInProject,
   touchProject,
   touchTask,
@@ -54,7 +54,7 @@ export async function publishStatusUpdate(
   const now = new Date();
   // Publishing a client update is Leader-level over the project — any manager
   // can publish for any task in the project, not just one they created.
-  await assertProjectManage(viewer, input.projectId);
+  await assertProjectCapability(viewer, input.projectId, "status.publish");
   const task = await assertTaskInProject(input.taskId, input.projectId);
 
   if (task.status !== "done") {
@@ -102,7 +102,7 @@ export async function deleteStatusUpdate(
 ): Promise<{ taskId: string }> {
   const db = getDb();
   const now = new Date();
-  await assertProjectManage(viewer, input.projectId);
+  await assertProjectCapability(viewer, input.projectId, "status.publish");
   const task = await assertTaskInProject(input.taskId, input.projectId);
 
   // Delete the task's single published update regardless of who authored it —

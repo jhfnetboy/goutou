@@ -1,12 +1,15 @@
 import { desc, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 
+import { MemberAccessControl } from "@/components/projects/member-access-control";
 import { MembersManager } from "@/components/projects/members-manager";
 import { requireViewer } from "@/lib/auth-server";
 import {
   canAccessProject,
   canAdministerProject,
   canManageProjectMembers,
+  PROJECT_CAPABILITIES,
+  resolveMemberPermissions,
 } from "@/lib/authz";
 import { getDb } from "@/lib/db";
 import { projectMembers, projects, user } from "@/lib/db/schema";
@@ -32,7 +35,12 @@ export default async function ProjectMembersPage({ params }: PageProps) {
 
   const db = getDb();
   const [project] = await db
-    .select({ id: projects.id, name: projects.name, ownerId: projects.ownerId })
+    .select({
+      id: projects.id,
+      name: projects.name,
+      ownerId: projects.ownerId,
+      memberPermissions: projects.memberPermissions,
+    })
     .from(projects)
     .where(eq(projects.id, projectId))
     .limit(1);
@@ -78,6 +86,8 @@ export default async function ProjectMembersPage({ params }: PageProps) {
       }
     : null;
 
+  const memberPermissions = resolveMemberPermissions(project.memberPermissions);
+
   return (
     <div className="space-y-6">
       <MembersManager
@@ -95,6 +105,19 @@ export default async function ProjectMembersPage({ params }: PageProps) {
           image: m.image,
           addedAt: m.addedAt,
         }))}
+      />
+
+      <MemberAccessControl
+        projectId={project.id}
+        capabilities={PROJECT_CAPABILITIES.map((c) => ({
+          key: c.key,
+          label: c.label,
+          description: c.description,
+          group: c.group,
+          defaultForMember: c.defaultForMember,
+        }))}
+        permissions={memberPermissions}
+        canManage={canManage}
       />
     </div>
   );

@@ -335,6 +335,11 @@ export const projects = sqliteTable(
     })
       .notNull()
       .default(true),
+    // Per-project overrides for what the "member" role may do, as a JSON map of
+    // capability-key → boolean. NULL (and any absent key) means "use the code
+    // default" in lib/authz, so default rules can evolve without a backfill.
+    // Owners/Leaders/admins are unaffected — this only relaxes/restricts Members.
+    memberPermissions: text("member_permissions"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),

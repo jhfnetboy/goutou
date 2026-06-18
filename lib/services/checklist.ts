@@ -10,7 +10,7 @@ import type { Viewer } from "@/lib/auth-server";
 import { getDb } from "@/lib/db";
 import { taskChecklistItems } from "@/lib/db/schema";
 import {
-  assertProjectAccess,
+  assertProjectCapability,
   assertTaskInProject,
   checklistExcerpt,
   getNextChecklistSortOrder,
@@ -69,7 +69,7 @@ export async function createChecklistItem(
 }> {
   const db = getDb();
   const now = new Date();
-  await assertProjectAccess(viewer, input.projectId);
+  await assertProjectCapability(viewer, input.projectId, "checklist.write");
   await assertTaskInProject(input.taskId, input.projectId);
 
   const itemId = crypto.randomUUID();
@@ -120,7 +120,7 @@ export async function toggleChecklistItem(
 ): Promise<{ item: { id: string; isCompleted: boolean } }> {
   const db = getDb();
   const now = new Date();
-  await assertProjectAccess(viewer, input.projectId);
+  await assertProjectCapability(viewer, input.projectId, "checklist.write");
   await assertTaskInProject(input.taskId, input.projectId);
 
   const [existingItem] = await db
@@ -182,7 +182,7 @@ export async function updateChecklistItem(
 ): Promise<{ item: { id: string; content: string } }> {
   const db = getDb();
   const now = new Date();
-  await assertProjectAccess(viewer, input.projectId);
+  await assertProjectCapability(viewer, input.projectId, "checklist.write");
   await assertTaskInProject(input.taskId, input.projectId);
 
   const [existingItem] = await db
@@ -247,7 +247,7 @@ export async function deleteChecklistItem(
 ): Promise<{ checklistItemId: string }> {
   const db = getDb();
   const now = new Date();
-  await assertProjectAccess(viewer, input.projectId);
+  await assertProjectCapability(viewer, input.projectId, "checklist.write");
   await assertTaskInProject(input.taskId, input.projectId);
 
   const [removedItem] = await db

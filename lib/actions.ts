@@ -19,11 +19,16 @@ import {
 import {
   isAdminTier,
   requireRole,
-  requireSession,
   requireViewer,
   type Viewer,
 } from "@/lib/auth-server";
-import { canAccessProject, canManageProject } from "@/lib/authz";
+import {
+  canAccessProject,
+  canProjectCapability,
+  getProjectMemberPermissions,
+  getProjectRole,
+  type ProjectCapability,
+} from "@/lib/authz";
 import {
   formatRequestCode,
   formatTaskCode,
@@ -364,35 +369,31 @@ async function nextRequestCodeNumber(projectId: string): Promise<number> {
   return (row?.value ?? 0) + 1;
 }
 
-async function assertProjectOwnership(projectId: string, ownerId: string) {
-  const db = getDb();
-  const [project] = await db
-    .select()
-    .from(projects)
-    .where(and(eq(projects.id, projectId), eq(projects.ownerId, ownerId)))
-    .limit(1);
-
-  if (!project) {
-    throw new Error("Project not found.");
-  }
-
-  return project;
-}
-
-// Task mutations are open to anyone who can access the project — admin tier, the
-// project owner, or a project member — matching /api/tasks/reorder and the MCP
-// service layer (lib/services/tasks.ts), so the New/Edit/Delete-task modals are
-// no stricter than the board itself. Returns the project row (callers need its
-// slug for task codes).
-async function assertProjectTaskAccess(viewer: Viewer, projectId: string) {
+// Capability gate for task/checklist mutations from the web modals. Owner /
+// leader / admin always pass; a Member passes only when the project's "Member
+// Access" toggle for `capability` is on (defaults to task.write). Mirrors the
+// service layer's assertProjectCapability so the web and MCP agree. Returns the
+// project row (callers need its slug for task codes). No-access stays opaque
+// "Project not found."; an in-project Member who lacks the toggle gets a clear
+// permission error.
+async function assertProjectTaskAccess(
+  viewer: Viewer,
+  projectId: string,
+  capability: ProjectCapability = "task.write",
+) {
   const db = getDb();
   const [project] = await db
     .select()
     .from(projects)
     .where(eq(projects.id, projectId))
     .limit(1);
-  if (!project || !(await canAccessProject(viewer, projectId))) {
-    throw new Error("Project not found.");
+  if (!project) throw new Error("Project not found.");
+  const role = await getProjectRole(viewer, projectId);
+  if (role === null) throw new Error("Project not found.");
+  if (role === "owner" || role === "leader") return project;
+  const perms = await getProjectMemberPermissions(projectId);
+  if (perms[capability] !== true) {
+    throw new Error("You don't have permission for this action on this project.");
   }
   return project;
 }
@@ -883,12 +884,16 @@ export async function deleteProjectAction(formData: FormData) {
 }
 
 export async function createRequestAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = requestCreateSchema.parse(toPayload(formData));
   const db = getDb();
   const now = new Date();
 
-  const project = await assertProjectOwnership(payload.projectId, session.user.id);
+  const project = await assertProjectTaskAccess(
+    viewer,
+    payload.projectId,
+    "request.write",
+  );
 
   const requestId = crypto.randomUUID();
   const codeNumber = await nextRequestCodeNumber(payload.projectId);
@@ -896,7 +901,7 @@ export async function createRequestAction(formData: FormData) {
 
   await db.insert(clientRequests).values({
     id: requestId,
-    ownerId: session.user.id,
+    ownerId: viewer.id,
     projectId: payload.projectId,
     title: payload.title,
     description: payload.description ?? null,
@@ -909,7 +914,7 @@ export async function createRequestAction(formData: FormData) {
 
   await touchProject(payload.projectId, now);
   await logProjectActivity(db, {
-    ownerId: session.user.id,
+    ownerId: viewer.id,
     projectId: payload.projectId,
     entityType: "request",
     entityId: requestId,
@@ -933,12 +938,12 @@ export async function createRequestAction(formData: FormData) {
 }
 
 export async function updateRequestAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = requestUpdateSchema.parse(toPayload(formData));
   const db = getDb();
   const now = new Date();
 
-  await assertProjectOwnership(payload.projectId, session.user.id);
+  await assertProjectTaskAccess(viewer, payload.projectId, "request.write");
 
   const [existingRequest] = await db
     .select()
@@ -947,7 +952,6 @@ export async function updateRequestAction(formData: FormData) {
       and(
         eq(clientRequests.id, payload.requestId),
         eq(clientRequests.projectId, payload.projectId),
-        eq(clientRequests.ownerId, session.user.id),
       ),
     )
     .limit(1);
@@ -969,7 +973,6 @@ export async function updateRequestAction(formData: FormData) {
       and(
         eq(clientRequests.id, payload.requestId),
         eq(clientRequests.projectId, payload.projectId),
-        eq(clientRequests.ownerId, session.user.id),
       ),
     );
 
@@ -998,7 +1001,7 @@ export async function updateRequestAction(formData: FormData) {
 
   await touchProject(payload.projectId, now);
   await logProjectActivity(db, {
-    ownerId: session.user.id,
+    ownerId: viewer.id,
     projectId: payload.projectId,
     entityType: "request",
     entityId: payload.requestId,
@@ -1023,10 +1026,13 @@ export async function updateRequestAction(formData: FormData) {
 }
 
 export async function deleteRequestAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = requestDeleteSchema.parse(toPayload(formData));
   const db = getDb();
   const now = new Date();
+
+  await assertProjectTaskAccess(viewer, payload.projectId, "request.write");
+
   const [request] = await db
     .select()
     .from(clientRequests)
@@ -1034,12 +1040,9 @@ export async function deleteRequestAction(formData: FormData) {
       and(
         eq(clientRequests.id, payload.requestId),
         eq(clientRequests.projectId, payload.projectId),
-        eq(clientRequests.ownerId, session.user.id),
       ),
     )
     .limit(1);
-
-  await assertProjectOwnership(payload.projectId, session.user.id);
 
   await db
     .delete(clientRequests)
@@ -1047,7 +1050,6 @@ export async function deleteRequestAction(formData: FormData) {
       and(
         eq(clientRequests.id, payload.requestId),
         eq(clientRequests.projectId, payload.projectId),
-        eq(clientRequests.ownerId, session.user.id),
       ),
     );
 
@@ -1055,7 +1057,7 @@ export async function deleteRequestAction(formData: FormData) {
 
   if (request) {
     await logProjectActivity(db, {
-      ownerId: session.user.id,
+      ownerId: viewer.id,
       projectId: payload.projectId,
       entityType: "request",
       entityId: payload.requestId,
@@ -1084,9 +1086,10 @@ export async function convertRequestToTaskAction(formData: FormData) {
   const payload = convertRequestSchema.parse(toPayload(formData));
   const db = getDb();
 
-  // Converting a request into a task is Leader-level (owner or leader). Any
-  // manager can convert any request in the project, not just ones they created.
-  if (!(await canManageProject(viewer, payload.projectId))) {
+  // Converting a request into a task creates a task, so it follows the same
+  // task.write capability as the New Task action (owner/leader always; a Member
+  // when the project's Member Access toggle allows it).
+  if (!(await canProjectCapability(viewer, payload.projectId, "task.write"))) {
     throw new Error("Project not found.");
   }
 
@@ -1504,7 +1507,7 @@ export async function createTaskChecklistItemAction(formData: FormData) {
   const db = getDb();
   const now = new Date();
 
-  await assertProjectTaskAccess(viewer, payload.projectId);
+  await assertProjectTaskAccess(viewer, payload.projectId, "checklist.write");
   await loadProjectTask(payload.taskId, payload.projectId);
 
   await db.insert(taskChecklistItems).values({
@@ -1549,7 +1552,7 @@ export async function toggleTaskChecklistItemAction(formData: FormData) {
   const db = getDb();
   const now = new Date();
 
-  await assertProjectTaskAccess(viewer, payload.projectId);
+  await assertProjectTaskAccess(viewer, payload.projectId, "checklist.write");
   await loadProjectTask(payload.taskId, payload.projectId);
 
   const [existingItem] = await db
@@ -1615,7 +1618,7 @@ export async function deleteTaskChecklistItemAction(formData: FormData) {
   const db = getDb();
   const now = new Date();
 
-  await assertProjectTaskAccess(viewer, payload.projectId);
+  await assertProjectTaskAccess(viewer, payload.projectId, "checklist.write");
   await loadProjectTask(payload.taskId, payload.projectId);
 
   const [removedItem] = await db

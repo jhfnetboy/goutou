@@ -7,7 +7,7 @@ import {
   type ActivityInput,
 } from "@/lib/activity";
 import { getViewer } from "@/lib/auth-server";
-import { canAccessProject } from "@/lib/authz";
+import { canProjectCapability } from "@/lib/authz";
 import { getDb } from "@/lib/db";
 import { projects, tasks } from "@/lib/db/schema";
 
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
   }
   const db = getDb();
 
-  if (!(await canAccessProject(viewer, payload.projectId))) {
+  if (!(await canProjectCapability(viewer, payload.projectId, "task.write"))) {
     return Response.json({ error: "Project not found" }, { status: 404 });
   }
 

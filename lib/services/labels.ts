@@ -17,8 +17,7 @@ import { canAccessProject } from "@/lib/authz";
 import { getDb } from "@/lib/db";
 import { taskLabels, taskTaskLabels } from "@/lib/db/schema";
 import {
-  assertProjectAccess,
-  assertProjectManage,
+  assertProjectCapability,
   assertTaskInProject,
   touchProject,
   touchTask,
@@ -142,7 +141,7 @@ async function assertLabelOwner(viewer: Viewer, labelId: string) {
     .where(eq(taskLabels.id, labelId))
     .limit(1);
   if (!row) throw new Error("Label not found.");
-  await assertProjectManage(viewer, row.projectId); // owner-only; throws otherwise
+  await assertProjectCapability(viewer, row.projectId, "taxonomy.manage");
   return row;
 }
 
@@ -186,7 +185,7 @@ export async function createTaskLabel(
   viewer: Viewer,
   input: CreateTaskLabelInput,
 ): Promise<{ labelId: string; name: string; color: string }> {
-  await assertProjectManage(viewer, input.projectId);
+  await assertProjectCapability(viewer, input.projectId, "taxonomy.manage");
   const db = getDb();
   const id = crypto.randomUUID();
   const now = new Date();
@@ -258,7 +257,7 @@ export async function setTaskLabels(
   viewer: Viewer,
   input: SetTaskLabelsInput,
 ): Promise<{ taskId: string; labels: LabelRow[] }> {
-  await assertProjectAccess(viewer, input.projectId);
+  await assertProjectCapability(viewer, input.projectId, "label.apply");
   await assertTaskInProject(input.taskId, input.projectId);
   const labels = await resolveProjectLabels(input.labelIds, input.projectId);
   const db = getDb();
@@ -290,7 +289,7 @@ export async function addTaskLabels(
   viewer: Viewer,
   input: AddTaskLabelInput,
 ): Promise<{ labels: LabelRow[]; updated: string[]; failed: { taskId: string; error: string }[] }> {
-  await assertProjectAccess(viewer, input.projectId);
+  await assertProjectCapability(viewer, input.projectId, "label.apply");
   const labels = await resolveProjectLabels(input.labelIds, input.projectId);
   const db = getDb();
   const now = new Date();
@@ -330,7 +329,7 @@ export async function removeTaskLabels(
   viewer: Viewer,
   input: RemoveTaskLabelInput,
 ): Promise<{ updated: string[]; failed: { taskId: string; error: string }[] }> {
-  await assertProjectAccess(viewer, input.projectId);
+  await assertProjectCapability(viewer, input.projectId, "label.apply");
   const db = getDb();
   const now = new Date();
   const labelIds = [...new Set(input.labelIds)];

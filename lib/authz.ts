@@ -14,6 +14,12 @@ import {
   type UserRole,
 } from "@/lib/db/schema";
 import { isAdminTier } from "@/lib/auth-server";
+import {
+  PROJECT_CAPABILITIES,
+  resolveMemberPermissions,
+  type ProjectCapability,
+  type ProjectCapabilityDef,
+} from "@/lib/project-capabilities";
 
 type ViewerInput = { id: string; role: UserRole };
 
@@ -291,4 +297,60 @@ export async function visibleProjectClause(viewer: ViewerInput) {
   const ids = await visibleProjectIds(viewer);
   if (ids.length === 0) return inArray(projects.id, ["__none__"]); // matches nothing
   return inArray(projects.id, ids);
+}
+
+/* ---------------------------------------------------------------------------
+ * Per-project "Member Access" capabilities.
+ *
+ * A configurable RBAC layer over the "member" project role only. Owners,
+ * Leaders, and workspace admins are NEVER gated by these toggles — they keep
+ * the full Leader/Owner authority defined above. For a plain Member, each
+ * capability is allowed or denied by the project's stored override (a JSON map
+ * in projects.member_permissions), falling back to the code default below when
+ * a key is unset. Defaults reproduce today's rules: the work a Member could
+ * already do is ON; Leader-level management is OFF (an owner/leader can opt a
+ * project's Members into it). Only owner/leader/admin may edit the toggles
+ * (canManageProject), so a Member can never widen their own access.
+ * ------------------------------------------------------------------------ */
+
+// The pure catalog + resolver live in a dependency-free module (imported above)
+// so client components and unit tests can use them without pulling in DB/Next
+// code. Re-exported here so existing `@/lib/authz` import sites keep working.
+export {
+  PROJECT_CAPABILITIES,
+  resolveMemberPermissions,
+  type ProjectCapability,
+  type ProjectCapabilityDef,
+};
+
+// A project's resolved Member-permission map (overrides merged over defaults).
+// Cached per request so multiple capability checks on one project hit the DB once.
+export const getProjectMemberPermissions = cache(
+  async (projectId: string): Promise<Record<ProjectCapability, boolean>> => {
+    const db = getDb();
+    const [row] = await db
+      .select({ memberPermissions: projects.memberPermissions })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .limit(1);
+    return resolveMemberPermissions(row?.memberPermissions);
+  },
+);
+
+/**
+ * Can the viewer perform `capability` on the project? Workspace admin / project
+ * owner / project leader are never gated (always true if they have the project).
+ * A Member is allowed iff the project's resolved toggle for that capability is
+ * on. No access at all → false.
+ */
+export async function canProjectCapability(
+  viewer: ViewerInput,
+  projectId: string,
+  capability: ProjectCapability,
+): Promise<boolean> {
+  const role = await getProjectRole(viewer, projectId);
+  if (role === null) return false;
+  if (role === "owner" || role === "leader") return true;
+  const perms = await getProjectMemberPermissions(projectId);
+  return perms[capability] === true;
 }

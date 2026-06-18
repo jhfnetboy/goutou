@@ -18,7 +18,7 @@ import type { Viewer } from "@/lib/auth-server";
 import { canAccessProject } from "@/lib/authz";
 import { getDb } from "@/lib/db";
 import { taskCategories, tasks } from "@/lib/db/schema";
-import { assertProjectManage } from "@/lib/services/_shared";
+import { assertProjectCapability } from "@/lib/services/_shared";
 import { isValidProjectColor, PROJECT_SWATCHES } from "@/lib/swatches";
 
 // Default when a caller creates a category without naming a color (the web
@@ -104,7 +104,7 @@ async function assertCategoryManage(viewer: Viewer, categoryId: string) {
   if (!row) throw new Error("Category not found.");
   // Leader-level (owner or leader, plus workspace admins) — matches the create
   // gate and the labels/notes/status-update siblings.
-  await assertProjectManage(viewer, row.projectId);
+  await assertProjectCapability(viewer, row.projectId, "taxonomy.manage");
   return row;
 }
 
@@ -159,7 +159,7 @@ export async function createTaskCategory(
   viewer: Viewer,
   input: CreateTaskCategoryInput,
 ): Promise<{ categoryId: string; name: string; color: string }> {
-  await assertProjectManage(viewer, input.projectId);
+  await assertProjectCapability(viewer, input.projectId, "taxonomy.manage");
   const db = getDb();
   const id = crypto.randomUUID();
   const now = new Date();

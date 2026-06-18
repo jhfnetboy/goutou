@@ -28,7 +28,7 @@ import {
 } from "@/lib/db/schema";
 import { normalizeRichTextInput } from "@/lib/rich-text";
 import {
-  assertProjectAccess,
+  assertProjectCapability,
   assertTaskInProject,
   getNextTaskSortOrder,
   getProjectSlug,
@@ -103,7 +103,7 @@ export async function createTask(
 ): Promise<{ taskId: string }> {
   const db = getDb();
   const now = new Date();
-  await assertProjectAccess(viewer, input.projectId);
+  await assertProjectCapability(viewer, input.projectId, "task.write");
 
   const taskId = crypto.randomUUID();
   const description = normalizeRichTextInput(input.description);
@@ -192,7 +192,7 @@ export async function updateTask(
 ): Promise<{ taskId: string }> {
   const db = getDb();
   const now = new Date();
-  await assertProjectAccess(viewer, input.projectId);
+  await assertProjectCapability(viewer, input.projectId, "task.write");
 
   const existingTask = await assertTaskInProject(input.taskId, input.projectId);
   const statusChanged = existingTask.status !== input.status;
@@ -322,7 +322,7 @@ export async function deleteTask(
 ): Promise<{ taskId: string }> {
   const db = getDb();
   const now = new Date();
-  await assertProjectAccess(viewer, input.projectId);
+  await assertProjectCapability(viewer, input.projectId, "task.write");
 
   const task = await assertTaskInProject(input.taskId, input.projectId);
 
@@ -364,7 +364,7 @@ export async function updateTaskStatus(
   viewer: Viewer,
   input: UpdateTaskStatusInput,
 ): Promise<{ taskId: string }> {
-  await assertProjectAccess(viewer, input.projectId);
+  await assertProjectCapability(viewer, input.projectId, "task.write");
   const existing = await assertTaskInProject(input.taskId, input.projectId);
 
   return updateTask(viewer, {
@@ -411,7 +411,7 @@ export async function setTaskCategory(
   updated: string[];
   failed: { taskId: string; error: string }[];
 }> {
-  await assertProjectAccess(viewer, input.projectId);
+  await assertProjectCapability(viewer, input.projectId, "task.write");
 
   const categoryId = input.categoryId ? input.categoryId : undefined;
   let category: { id: string; name: string; color: string | null } | null =

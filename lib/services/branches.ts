@@ -14,7 +14,11 @@ import { z } from "zod";
 
 import { toActivityRow } from "@/lib/activity";
 import type { Viewer } from "@/lib/auth-server";
-import { canAccessProject, canManageProject } from "@/lib/authz";
+import {
+  canAccessProject,
+  canManageProject,
+  canProjectCapability,
+} from "@/lib/authz";
 import { getDb } from "@/lib/db";
 import {
   branches,
@@ -25,7 +29,7 @@ import {
   user,
 } from "@/lib/db/schema";
 import {
-  assertProjectAccess,
+  assertProjectCapability,
   assertTaskInProject,
   getNextTaskSortOrder,
 } from "@/lib/services/_shared";
@@ -116,10 +120,18 @@ async function assertBranchManage(viewer: Viewer, branchId: string) {
     throw new Error("Branch not found.");
   }
   const canManage = await canManageProject(viewer, branch.projectId);
+  if (canManage) return branch;
+  // A Member can manage a branch they created, but only while they still hold
+  // the branch.write capability (so revoking it also locks down their branches).
   const isCreator = branch.createdBy === viewer.id;
-  if (!canManage && !isCreator) {
+  const hasBranchWrite = await canProjectCapability(
+    viewer,
+    branch.projectId,
+    "branch.write",
+  );
+  if (!(isCreator && hasBranchWrite)) {
     throw new Error(
-      "Only the branch creator, a project leader, or the owner can change this branch.",
+      "Only the branch creator (with branch access), a project leader, or the owner can change this branch.",
     );
   }
   return branch;
@@ -184,7 +196,7 @@ export async function createBranch(
   viewer: Viewer,
   input: CreateBranchInput,
 ): Promise<{ branchId: string; name: string }> {
-  await assertProjectAccess(viewer, input.projectId);
+  await assertProjectCapability(viewer, input.projectId, "branch.write");
   const db = getDb();
   const branchId = crypto.randomUUID();
   const now = new Date();
@@ -304,7 +316,7 @@ export async function moveTaskToBranch(
   viewer: Viewer,
   input: MoveTaskToBranchInput,
 ): Promise<{ taskId: string; branchId: string }> {
-  await assertProjectAccess(viewer, input.projectId);
+  await assertProjectCapability(viewer, input.projectId, "branch.write");
   const task = await assertTaskInProject(input.taskId, input.projectId);
   const db = getDb();
   const now = new Date();

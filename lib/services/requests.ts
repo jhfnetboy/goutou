@@ -18,7 +18,7 @@ import {
 } from "@/lib/db/schema";
 import { normalizeRichTextInput } from "@/lib/rich-text";
 import {
-  assertProjectAccess,
+  assertProjectCapability,
   getProjectSlug,
   isUniqueConstraintError,
   nextRequestCodeNumber,
@@ -63,7 +63,7 @@ export async function createRequest(
 ): Promise<{ requestId: string }> {
   const db = getDb();
   const now = new Date();
-  await assertProjectAccess(viewer, input.projectId);
+  await assertProjectCapability(viewer, input.projectId, "request.write");
 
   const requestId = crypto.randomUUID();
   const description = normalizeRichTextInput(input.description);
@@ -121,7 +121,7 @@ export async function updateRequest(
 ): Promise<{ requestId: string }> {
   const db = getDb();
   const now = new Date();
-  await assertProjectAccess(viewer, input.projectId);
+  await assertProjectCapability(viewer, input.projectId, "request.write");
 
   const [existingRequest] = await db
     .select()
@@ -205,7 +205,7 @@ export async function deleteRequest(
 ): Promise<{ requestId: string }> {
   const db = getDb();
   const now = new Date();
-  await assertProjectAccess(viewer, input.projectId);
+  await assertProjectCapability(viewer, input.projectId, "request.write");
 
   const [requestRow] = await db
     .select()

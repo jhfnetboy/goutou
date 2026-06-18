@@ -35,7 +35,7 @@ import {
 } from "@/lib/db/schema";
 import {
   assertProjectAdminister,
-  assertProjectManage,
+  assertProjectCapability,
   optionalText,
   parseDate,
 } from "@/lib/services/_shared";
@@ -271,7 +271,11 @@ export async function updateProject(
   const db = getDb();
   const now = new Date();
 
-  const existingProject = await assertProjectManage(viewer, input.projectId);
+  const existingProject = await assertProjectCapability(
+    viewer,
+    input.projectId,
+    "project.edit",
+  );
 
   const nextDeadline = parseDate(input.deadline);
   await db
@@ -374,7 +378,11 @@ export async function setProjectColor(
   const db = getDb();
   const now = new Date();
 
-  const project = await assertProjectManage(viewer, input.projectId);
+  const project = await assertProjectCapability(
+    viewer,
+    input.projectId,
+    "project.edit",
+  );
 
   const nextColor = input.color === "" ? null : input.color;
   if ((project.color ?? null) === nextColor) {
@@ -544,7 +552,11 @@ export async function setClientShareVisibility(
   showCommits: boolean;
 }> {
   const db = getDb();
-  const project = await assertProjectManage(viewer, input.projectId);
+  const project = await assertProjectCapability(
+    viewer,
+    input.projectId,
+    "project.edit",
+  );
   const now = new Date();
 
   await db
