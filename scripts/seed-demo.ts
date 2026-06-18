@@ -128,6 +128,36 @@ insert(
   users.map((u) => ({ ...u, email_verified: 1, image: null, disabled_at: null, updated_at: u.created_at })),
 );
 
+// ===================== SPACES =====================
+// The owner's Personal space is provisioned at signup / by migration 0032. Give
+// the teammates a Personal space too, plus a shared Company space (Northwind,
+// led by Maya) so grouping + shared access are visible. Aurora lives in the
+// company space below, so Maya/Arjun/Lena reach it through space membership.
+const NORTHWIND = "demo-space-northwind";
+const ADMIN_PERSONAL = raw(
+  `(SELECT id FROM spaces WHERE kind = 'personal' AND owner_id = ${OWNER.__raw})`,
+);
+insert(
+  "spaces",
+  ["id", "kind", "name", "owner_id", "lead_id", "created_by", "created_at", "updated_at"],
+  [
+    { id: "demo-space-maya-personal", kind: "personal", name: "Personal", owner_id: "demo-user-maya", lead_id: null, created_by: "demo-user-maya", created_at: ms(-120), updated_at: ms(-120) },
+    { id: "demo-space-arjun-personal", kind: "personal", name: "Personal", owner_id: "demo-user-arjun", lead_id: null, created_by: "demo-user-arjun", created_at: ms(-95), updated_at: ms(-95) },
+    { id: "demo-space-lena-personal", kind: "personal", name: "Personal", owner_id: "demo-user-lena", lead_id: null, created_by: "demo-user-lena", created_at: ms(-60), updated_at: ms(-60) },
+    { id: "demo-space-tomas-personal", kind: "personal", name: "Personal", owner_id: "demo-user-tomas", lead_id: null, created_by: "demo-user-tomas", created_at: ms(-30), updated_at: ms(-30) },
+    { id: NORTHWIND, kind: "company", name: "Northwind Retail", owner_id: null, lead_id: "demo-user-maya", created_by: OWNER, created_at: ms(-110), updated_at: ms(-2) },
+  ],
+);
+insert(
+  "space_members",
+  ["id", "space_id", "user_id", "added_by_id", "created_at"],
+  [
+    { id: "demo-sm-nw-maya", space_id: NORTHWIND, user_id: "demo-user-maya", added_by_id: OWNER, created_at: ms(-110) },
+    { id: "demo-sm-nw-arjun", space_id: NORTHWIND, user_id: "demo-user-arjun", added_by_id: "demo-user-maya", created_at: ms(-100) },
+    { id: "demo-sm-nw-lena", space_id: NORTHWIND, user_id: "demo-user-lena", added_by_id: "demo-user-maya", created_at: ms(-90) },
+  ],
+);
+
 // ===================== PROJECTS =====================
 const AURORA = "demo-proj-aurora";
 const ATLAS = "demo-proj-atlas";
@@ -140,8 +170,16 @@ const projects = [
 ];
 insert(
   "projects",
-  ["id", "owner_id", "name", "slug", "client_name", "summary", "status", "deadline", "color", "archived_at", "client_share_enabled", "client_share_token", "created_at", "updated_at"],
-  projects.map((p) => ({ ...p, owner_id: OWNER, archived_at: null, updated_at: ms(-2) })),
+  ["id", "owner_id", "space_id", "name", "slug", "client_name", "summary", "status", "deadline", "color", "archived_at", "client_share_enabled", "client_share_token", "created_at", "updated_at"],
+  // Default every project into the owner's Personal space on a fresh insert; the
+  // explicit UPDATEs below then place them authoritatively (also fixes an
+  // already-seeded DB where INSERT OR IGNORE skips the rows).
+  projects.map((p) => ({ ...p, owner_id: OWNER, space_id: ADMIN_PERSONAL, archived_at: null, updated_at: ms(-2) })),
+);
+// Aurora is shared work → company space; the others stay in the owner's Personal.
+statements.push(`UPDATE projects SET space_id = '${NORTHWIND}' WHERE id = '${AURORA}';`);
+statements.push(
+  `UPDATE projects SET space_id = ${ADMIN_PERSONAL.__raw} WHERE id IN ('${ATLAS}', '${PULSE}');`,
 );
 
 // ===================== TASK CATEGORIES =====================
