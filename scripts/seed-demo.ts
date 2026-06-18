@@ -160,6 +160,42 @@ insert(
   cats.map((c) => ({ ...c, created_at: ms(-100), updated_at: ms(-100) })),
 );
 
+// ===================== BRANCHES =====================
+// Demo projects are inserted directly (bypassing createProject), so seed their
+// Main branch here — plus one feature branch on Aurora so Main vs feature show
+// a different set of work, all on STABLE ids that the demo tasks/requests below
+// reference.
+const AURORA_MAIN = "demo-branch-aurora-main";
+const ATLAS_MAIN = "demo-branch-atlas-main";
+const PULSE_MAIN = "demo-branch-pulse-main";
+const AURORA_FEATURE = "demo-branch-aurora-checkout";
+const MAIN: Record<string, string> = {
+  [AURORA]: AURORA_MAIN,
+  [ATLAS]: ATLAS_MAIN,
+  [PULSE]: PULSE_MAIN,
+};
+// If a demo project was seeded BEFORE this script grew branch support, migration
+// 0030 backfilled its Main with a RANDOM id. That random Main occupies the
+// one-default-per-project slot (partial-unique branches_project_default_idx), so
+// our stable-id Main below would be silently dropped by INSERT OR IGNORE,
+// orphaning every demo task/request behind a dangling branch_id. Delete any such
+// non-stable default first (cascading its rows, which the INSERT OR IGNOREs
+// below re-create on the stable Main) so our deterministic ids always win. No-op
+// on a fresh DB and on a clean re-run.
+statements.push(
+  `DELETE FROM branches WHERE is_default = 1 AND project_id IN ('${AURORA}', '${ATLAS}', '${PULSE}') AND id NOT IN ('${AURORA_MAIN}', '${ATLAS_MAIN}', '${PULSE_MAIN}');`,
+);
+insert(
+  "branches",
+  ["id", "project_id", "name", "description", "created_by", "is_default", "created_at", "updated_at"],
+  [
+    { id: AURORA_MAIN, project_id: AURORA, name: "Main", description: null, created_by: OWNER, is_default: 1, created_at: ms(-110), updated_at: ms(-2) },
+    { id: ATLAS_MAIN, project_id: ATLAS, name: "Main", description: null, created_by: OWNER, is_default: 1, created_at: ms(-80), updated_at: ms(-2) },
+    { id: PULSE_MAIN, project_id: PULSE, name: "Main", description: null, created_by: OWNER, is_default: 1, created_at: ms(-45), updated_at: ms(-2) },
+    { id: AURORA_FEATURE, project_id: AURORA, name: "feature/checkout", description: "Redesigned checkout + payment flow, kept separate from the Main release work.", created_by: "demo-user-arjun", is_default: 0, created_at: ms(-14), updated_at: ms(-1) },
+  ],
+);
+
 // ===================== TASKS =====================
 const HERO = "demo-task-a1";
 const heroDesc = doc(
@@ -197,12 +233,13 @@ type TaskOpts = {
   id: string; project: string; code: number; title: string;
   status: string; priority: string; assignee: unknown; cat?: string;
   phase?: string; due?: number | null; desc?: string | null;
-  created?: number; updated?: number; sort?: number;
+  created?: number; updated?: number; sort?: number; branch?: string;
 };
 function task(o: TaskOpts) {
   const c = o.cat ? CAT[o.cat] : undefined;
   return {
-    id: o.id, owner_id: OWNER, project_id: o.project, request_id: null,
+    id: o.id, owner_id: OWNER, project_id: o.project,
+    branch_id: o.branch ?? MAIN[o.project] ?? null, request_id: null,
     assignee_id: o.assignee, title: o.title, description: o.desc ?? null,
     code_number: o.code, category_id: o.cat ?? null,
     category_name: c?.name ?? null, category_color: c?.color ?? null,
@@ -230,10 +267,15 @@ const tasks = [
   task({ id: "demo-task-a8", project: AURORA, code: 8, title: "Analytics events wiring", status: "done", priority: "high", assignee: OWNER, cat: "cat-a-front", phase: "Build", created: ms(-38), updated: ms(-6), sort: 3 }),
   task({ id: "demo-task-b3", project: ATLAS, code: 3, title: "Provision staging cluster", status: "done", priority: "medium", assignee: M, cat: "cat-b-infra", phase: "Build", created: ms(-55), updated: ms(-33), sort: 4 }),
   task({ id: "demo-task-c1", project: PULSE, code: 1, title: "Button and Input primitives", status: "done", priority: "medium", assignee: M, cat: "cat-c-comp", phase: "Build", created: ms(-40), updated: ms(-20), sort: 5 }),
+
+  // Aurora's feature/checkout branch — these only show on that branch, not Main.
+  task({ id: "demo-task-feat-1", project: AURORA, branch: AURORA_FEATURE, code: 9, title: "Checkout cart redesign", status: "doing", priority: "high", assignee: A, cat: "cat-a-front", phase: "Build", due: day(6), created: ms(-12), updated: ms(-1), sort: 0, desc: simple("Rebuild the cart and payment steps for the new checkout flow.") }),
+  task({ id: "demo-task-feat-2", project: AURORA, branch: AURORA_FEATURE, code: 10, title: "Apple Pay integration", status: "todo", priority: "medium", assignee: A, cat: "cat-a-back", phase: "Build", due: day(10), created: ms(-10), updated: ms(-2), sort: 0 }),
+  task({ id: "demo-task-feat-3", project: AURORA, branch: AURORA_FEATURE, code: 11, title: "Promo code field", status: "todo", priority: "low", assignee: L, cat: "cat-a-front", created: ms(-8), updated: ms(-3), sort: 1 }),
 ];
 insert(
   "tasks",
-  ["id", "owner_id", "project_id", "request_id", "assignee_id", "title", "description", "code_number", "category_id", "category_name", "category_color", "phase", "status", "priority", "due_date", "sort_order", "created_at", "updated_at"],
+  ["id", "owner_id", "project_id", "branch_id", "request_id", "assignee_id", "title", "description", "code_number", "category_id", "category_name", "category_color", "phase", "status", "priority", "due_date", "sort_order", "created_at", "updated_at"],
   tasks,
 );
 
@@ -276,19 +318,23 @@ const reqDesc: Record<string, string> = {
   "demo-req-2": "Finance needs the weekly summary as CSV for their existing spreadsheets.",
   "demo-req-3": "Enterprise security requires Okta SSO before the wider rollout.",
   "demo-req-4": "Add hover tooltips explaining each KPI on the analytics dashboard.",
+  "demo-req-6": "Returning shoppers want their cards saved for one-tap checkout.",
 };
 const requests = [
-  { id: "demo-req-1", code: 1, title: "Add a dark mode toggle", status: "new", priority: "high", at: ms(-1) },
-  { id: "demo-req-5", code: 5, title: "Bulk archive completed projects", status: "new", priority: "medium", at: ms(-2) },
-  { id: "demo-req-2", code: 2, title: "Export reports to CSV", status: "reviewed", priority: "medium", at: ms(-4) },
-  { id: "demo-req-3", code: 3, title: "Single sign-on with Okta", status: "converted", priority: "high", at: ms(-9) },
-  { id: "demo-req-4", code: 4, title: "Tooltips on the dashboard", status: "closed", priority: "low", at: ms(-15) },
+  { id: "demo-req-1", code: 1, title: "Add a dark mode toggle", status: "new", priority: "high", at: ms(-1), branch: AURORA_MAIN },
+  { id: "demo-req-5", code: 5, title: "Bulk archive completed projects", status: "new", priority: "medium", at: ms(-2), branch: AURORA_MAIN },
+  { id: "demo-req-2", code: 2, title: "Export reports to CSV", status: "reviewed", priority: "medium", at: ms(-4), branch: AURORA_MAIN },
+  { id: "demo-req-3", code: 3, title: "Single sign-on with Okta", status: "converted", priority: "high", at: ms(-9), branch: AURORA_MAIN },
+  { id: "demo-req-4", code: 4, title: "Tooltips on the dashboard", status: "closed", priority: "low", at: ms(-15), branch: AURORA_MAIN },
+  // A requirement scoped to the feature/checkout branch.
+  { id: "demo-req-6", code: 6, title: "Saved payment methods", status: "new", priority: "high", at: ms(-1), branch: AURORA_FEATURE },
 ];
 insert(
   "client_requests",
-  ["id", "owner_id", "project_id", "title", "description", "code_number", "status", "priority", "created_at", "updated_at"],
+  ["id", "owner_id", "project_id", "branch_id", "title", "description", "code_number", "status", "priority", "created_at", "updated_at"],
   requests.map((r) => ({
-    id: r.id, owner_id: OWNER, project_id: AURORA, title: r.title,
+    id: r.id, owner_id: OWNER, project_id: AURORA, branch_id: r.branch,
+    title: r.title,
     description: reqDesc[r.id], code_number: r.code, status: r.status,
     priority: r.priority, created_at: ms(-18), updated_at: r.at,
   })),

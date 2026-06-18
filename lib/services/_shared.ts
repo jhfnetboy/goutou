@@ -9,6 +9,7 @@ import type { Viewer } from "@/lib/auth-server";
 import { canAccessProject } from "@/lib/authz";
 import { getDb } from "@/lib/db";
 import {
+  branches,
   clientRequests,
   projectMembers,
   projects,
@@ -197,6 +198,7 @@ export async function assertTaskInProject(taskId: string, projectId: string) {
 export async function getNextTaskSortOrder(
   projectId: string,
   status: TaskStatus,
+  branchId: string,
 ) {
   const db = getDb();
   const [latest] = await db
@@ -204,11 +206,53 @@ export async function getNextTaskSortOrder(
       sortOrder: tasks.sortOrder,
     })
     .from(tasks)
-    .where(and(eq(tasks.projectId, projectId), eq(tasks.status, status)))
+    .where(
+      and(
+        eq(tasks.projectId, projectId),
+        eq(tasks.branchId, branchId),
+        eq(tasks.status, status),
+      ),
+    )
     .orderBy(desc(tasks.sortOrder))
     .limit(1);
 
   return (latest?.sortOrder ?? -1) + 1;
+}
+
+/**
+ * The project's default ("Main") branch id. Every project has exactly one —
+ * createProject inserts it atomically, and migration 0030 backfilled all
+ * pre-existing projects — so a missing one means corrupt data, surfaced loudly.
+ */
+export async function resolveDefaultBranchId(projectId: string): Promise<string> {
+  const db = getDb();
+  const [row] = await db
+    .select({ id: branches.id })
+    .from(branches)
+    .where(and(eq(branches.projectId, projectId), eq(branches.isDefault, true)))
+    .limit(1);
+  if (!row) throw new Error("Project has no default branch.");
+  return row.id;
+}
+
+/**
+ * Resolve which branch a task/request belongs on. An explicit id is validated
+ * against the project (a foreign/unknown id throws, so a bad MCP call fails
+ * loudly instead of silently writing to Main); omitted → the Main branch.
+ */
+export async function resolveBranchId(
+  branchId: string | undefined | null,
+  projectId: string,
+): Promise<string> {
+  if (!branchId) return resolveDefaultBranchId(projectId);
+  const db = getDb();
+  const [row] = await db
+    .select({ id: branches.id })
+    .from(branches)
+    .where(and(eq(branches.id, branchId), eq(branches.projectId, projectId)))
+    .limit(1);
+  if (!row) throw new Error("Branch not found in this project.");
+  return row.id;
 }
 
 export async function nextTaskCodeNumber(projectId: string): Promise<number> {

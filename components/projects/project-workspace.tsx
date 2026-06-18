@@ -220,6 +220,7 @@ export function ProjectBoardSurface({
       <KanbanBoard
         key={boardKey}
         projectId={workspace.project.id}
+        branchId={workspace.currentBranchId}
         taskHrefBase={currentPath}
         showFilters={!preview}
         previewLimit={preview ? 5 : undefined}

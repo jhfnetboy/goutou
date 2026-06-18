@@ -64,6 +64,7 @@ export type TaskSummary = {
   status: TaskStatus;
   priority: Priority;
   projectId: string;
+  branchId: string | null;
   assigneeId: string | null;
   dueDate: string | null;
 };
@@ -81,6 +82,7 @@ export type RequestSummary = {
   status: RequestStatus;
   priority: Priority;
   projectId: string;
+  branchId: string | null;
 };
 
 export type RequestDetail = RequestSummary & {
@@ -206,7 +208,12 @@ export async function readProject(
 
 export async function listTasks(
   viewer: Viewer,
-  filter?: { projectId?: string; status?: TaskStatus; assignedToMe?: boolean },
+  filter?: {
+    projectId?: string;
+    status?: TaskStatus;
+    assignedToMe?: boolean;
+    branchId?: string;
+  },
 ): Promise<TaskSummary[]> {
   const db = getDb();
   let scopeIds: string[];
@@ -226,6 +233,9 @@ export async function listTasks(
   if (filter?.status) {
     rows = rows.filter((t) => t.status === filter.status);
   }
+  if (filter?.branchId) {
+    rows = rows.filter((t) => t.branchId === filter.branchId);
+  }
   if (filter?.assignedToMe) {
     rows = rows.filter((t) => t.assigneeId === viewer.id);
   }
@@ -238,6 +248,7 @@ export async function listTasks(
     status: t.status,
     priority: t.priority,
     projectId: t.projectId,
+    branchId: t.branchId,
     assigneeId: t.assigneeId,
     dueDate: t.dueDate ? t.dueDate.toISOString() : null,
   }));
@@ -275,6 +286,7 @@ export async function readTask(
     status: task.status,
     priority: task.priority,
     projectId: task.projectId,
+    branchId: task.branchId,
     assigneeId: task.assigneeId,
     dueDate: task.dueDate ? task.dueDate.toISOString() : null,
     description: task.description,
@@ -287,7 +299,7 @@ export async function readTask(
 
 export async function listRequests(
   viewer: Viewer,
-  filter?: { projectId?: string; status?: RequestStatus },
+  filter?: { projectId?: string; status?: RequestStatus; branchId?: string },
 ): Promise<RequestSummary[]> {
   const db = getDb();
   let scopeIds: string[];
@@ -305,6 +317,9 @@ export async function listRequests(
   if (filter?.status) {
     rows = rows.filter((r) => r.status === filter.status);
   }
+  if (filter?.branchId) {
+    rows = rows.filter((r) => r.branchId === filter.branchId);
+  }
   const capped = rows.slice(0, MAX_ROWS);
   const slugs = await slugMap(capped.map((r) => r.projectId));
   return capped.map((r) => ({
@@ -314,6 +329,7 @@ export async function listRequests(
     status: r.status,
     priority: r.priority,
     projectId: r.projectId,
+    branchId: r.branchId,
   }));
 }
 
@@ -343,6 +359,7 @@ export async function readRequest(
     status: row.status,
     priority: row.priority,
     projectId: row.projectId,
+    branchId: row.branchId,
     description: row.description,
     createdAt: row.createdAt.toISOString(),
   };

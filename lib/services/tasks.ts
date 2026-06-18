@@ -36,7 +36,9 @@ import {
   nextTaskCodeNumber,
   optionalText,
   resolveAssignee,
+  resolveBranchId,
   resolveCategory,
+  resolveDefaultBranchId,
   resolveDueDate,
   userNameMap,
 } from "@/lib/services/_shared";
@@ -47,6 +49,9 @@ const descriptionField = optionalText.describe(
 
 export const createTaskInputSchema = z.object({
   projectId: z.string().min(1),
+  branchId: optionalText.describe(
+    "Branch id to create the task on (an id, not a name; get it from list-branches). Defaults to the project's Main branch.",
+  ),
   title: z.string().trim().min(1).max(140),
   description: descriptionField,
   categoryId: optionalText.describe(
@@ -105,7 +110,8 @@ export async function createTask(
   const assigneeId = await resolveAssignee(input.assigneeId, input.projectId);
   const slug = await getProjectSlug(input.projectId);
   const category = await resolveCategory(input.categoryId, input.projectId);
-  const sortOrder = await getNextTaskSortOrder(input.projectId, "todo");
+  const branchId = await resolveBranchId(input.branchId, input.projectId);
+  const sortOrder = await getNextTaskSortOrder(input.projectId, "todo", branchId);
   const dueDate = resolveDueDate(input.dueDate);
   // Only link a client request that belongs to this same project; drop a
   // stale/cross-project request id rather than persisting a foreign link.
@@ -138,6 +144,7 @@ export async function createTask(
           id: taskId,
           ownerId: viewer.id,
           projectId: input.projectId,
+          branchId,
           requestId,
           assigneeId,
           title: input.title,
@@ -189,8 +196,13 @@ export async function updateTask(
 
   const existingTask = await assertTaskInProject(input.taskId, input.projectId);
   const statusChanged = existingTask.status !== input.status;
+  // A status move re-homes the card to the bottom of the new column WITHIN its
+  // own branch (sort order is scoped per branch). branchId is always set in
+  // practice; fall back to Main only to satisfy the non-null contract.
+  const branchId =
+    existingTask.branchId ?? (await resolveDefaultBranchId(input.projectId));
   const nextSortOrder = statusChanged
-    ? await getNextTaskSortOrder(input.projectId, input.status)
+    ? await getNextTaskSortOrder(input.projectId, input.status, branchId)
     : existingTask.sortOrder;
   // Stamp the moment the task enters a new column; keep the prior stamp on edits
   // that don't move it (so the "in <status> since" label reflects the real move).

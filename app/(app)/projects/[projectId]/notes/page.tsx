@@ -6,23 +6,31 @@ import {
 import { ProjectWorkspaceClientShell } from "@/components/projects/project-workspace-ui";
 import { requireViewer } from "@/lib/auth-server";
 import { getProjectWorkspace } from "@/lib/data";
+import { branchPath } from "@/lib/branch-path";
 
 type ProjectNotesPageProps = {
   params: Promise<{ projectId: string }>;
+  searchParams: Promise<{ branch?: string }>;
 };
 
 export default async function ProjectNotesPage({
   params,
+  searchParams,
 }: ProjectNotesPageProps) {
   const viewer = await requireViewer();
   const { projectId } = await params;
-  const workspace = await getProjectWorkspace(projectId, viewer);
+  const { branch } = await searchParams;
+  const workspace = await getProjectWorkspace(projectId, viewer, branch);
 
   if (!workspace) {
     notFound();
   }
 
-  const currentPath = `/projects/${projectId}/notes`;
+  const currentPath = branchPath(
+    `/projects/${projectId}/notes`,
+    workspace.branches,
+    workspace.currentBranchId,
+  );
 
   return (
     <ProjectWorkspaceClientShell

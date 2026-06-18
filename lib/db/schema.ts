@@ -36,6 +36,7 @@ export const activityEntityValues = [
   "request",
   "task",
   "note",
+  "branch",
 ] as const;
 
 export const activityActionValues = [
@@ -278,6 +279,47 @@ export const projects = sqliteTable(
   ],
 );
 
+// Git-like workstreams within a project. Tasks and requests are scoped to a
+// branch (gain a branchId), so the Main branch and a feature branch show a
+// different set of work. Every project owns exactly one default "Main" branch
+// (created with the project); members can add more. Branches are public to all
+// project members — anyone in the project can view/switch to any branch.
+export const branches = sqliteTable(
+  "branches",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    // Branches are shared and must outlive their creator, so this FK clears
+    // (set null) rather than cascading on user deletion — unlike authorId FKs.
+    createdBy: text("created_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    // The auto-created "Main" branch. Exactly one per project, enforced by the
+    // partial unique index below; Main cannot be deleted (guarded in services).
+    isDefault: integer("is_default", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("branches_project_idx").on(table.projectId),
+    uniqueIndex("branches_project_name_idx").on(table.projectId, table.name),
+    // At most one default (Main) branch per project.
+    uniqueIndex("branches_project_default_idx")
+      .on(table.projectId)
+      .where(sql`${table.isDefault} = 1`),
+  ],
+);
+
 export const projectActivity = sqliteTable(
   "project_activity",
   {
@@ -317,6 +359,12 @@ export const clientRequests = sqliteTable(
     projectId: text("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
+    // Branch this requirement belongs to. Nullable at the DB level only because
+    // SQLite can't ALTER ADD a NOT NULL FK; every write path sets it (defaults
+    // to the project's Main branch), and the migration backfills existing rows.
+    branchId: text("branch_id").references(() => branches.id, {
+      onDelete: "cascade",
+    }),
     title: text("title").notNull(),
     description: text("description"),
     codeNumber: integer("code_number"),
@@ -335,6 +383,7 @@ export const clientRequests = sqliteTable(
   },
   (table) => [
     index("requests_project_idx").on(table.projectId),
+    index("requests_branch_idx").on(table.branchId),
     index("requests_owner_idx").on(table.ownerId),
     index("requests_status_idx").on(table.status),
     uniqueIndex("requests_project_code_idx")
@@ -353,6 +402,12 @@ export const tasks = sqliteTable(
     projectId: text("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
+    // Branch this task belongs to. Nullable at the DB level only because SQLite
+    // can't ALTER ADD a NOT NULL FK; every write path sets it (defaults to the
+    // project's Main branch), and the migration backfills existing rows.
+    branchId: text("branch_id").references(() => branches.id, {
+      onDelete: "cascade",
+    }),
     requestId: text("request_id").references(() => clientRequests.id, {
       onDelete: "set null",
     }),
@@ -389,9 +444,16 @@ export const tasks = sqliteTable(
   },
   (table) => [
     index("tasks_project_idx").on(table.projectId),
+    index("tasks_branch_idx").on(table.branchId),
     index("tasks_owner_idx").on(table.ownerId),
     index("tasks_assignee_idx").on(table.assigneeId),
     index("tasks_status_sort_idx").on(table.status, table.sortOrder),
+    // Board reads filter by branch then group by status and order by sortOrder.
+    index("tasks_branch_status_sort_idx").on(
+      table.branchId,
+      table.status,
+      table.sortOrder,
+    ),
     index("tasks_status_changed_at_idx").on(table.statusChangedAt),
     index("tasks_request_idx").on(table.requestId),
     index("tasks_category_idx").on(table.categoryId),
@@ -820,6 +882,7 @@ export type ActivityEntity = (typeof activityEntityValues)[number];
 export type ActivityAction = (typeof activityActionValues)[number];
 
 export type Project = typeof projects.$inferSelect;
+export type Branch = typeof branches.$inferSelect;
 export type ClientRequest = typeof clientRequests.$inferSelect;
 export type Task = typeof tasks.$inferSelect;
 export type TaskChecklistItem = typeof taskChecklistItems.$inferSelect;

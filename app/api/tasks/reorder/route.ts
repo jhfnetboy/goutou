@@ -13,6 +13,10 @@ import { projects, tasks } from "@/lib/db/schema";
 
 const reorderSchema = z.object({
   projectId: z.string().min(1),
+  // The branch the board was showing. When present, the reorder is constrained
+  // to tasks on that branch so a payload can never renumber another branch's
+  // cards (and a card moved off-branch concurrently is simply skipped).
+  branchId: z.string().min(1).optional(),
   columns: z.object({
     todo: z.array(z.string()),
     doing: z.array(z.string()),
@@ -40,6 +44,9 @@ export async function POST(request: Request) {
   }
 
   const now = new Date();
+  const branchScope = payload.branchId
+    ? and(eq(tasks.projectId, payload.projectId), eq(tasks.branchId, payload.branchId))
+    : eq(tasks.projectId, payload.projectId);
   const existingTasks = await db
     .select({
       id: tasks.id,
@@ -47,7 +54,7 @@ export async function POST(request: Request) {
       status: tasks.status,
     })
     .from(tasks)
-    .where(eq(tasks.projectId, payload.projectId));
+    .where(branchScope);
   const taskMap = new Map(existingTasks.map((task) => [task.id, task]));
   const orderedStatuses = [
     ["todo", payload.columns.todo],
@@ -85,7 +92,13 @@ export async function POST(request: Request) {
           ...(movedColumns ? { statusChangedAt: now } : {}),
         })
         .where(
-          and(eq(tasks.id, taskId), eq(tasks.projectId, payload.projectId)),
+          payload.branchId
+            ? and(
+                eq(tasks.id, taskId),
+                eq(tasks.projectId, payload.projectId),
+                eq(tasks.branchId, payload.branchId),
+              )
+            : and(eq(tasks.id, taskId), eq(tasks.projectId, payload.projectId)),
         );
     }
   }

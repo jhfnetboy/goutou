@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { getDb } from "@/lib/db";
-import { projects, taskComments, tasks } from "@/lib/db/schema";
+import { branches, projects, taskComments, tasks } from "@/lib/db/schema";
 import { getStorage } from "@/lib/storage";
 
 type RouteContext = { params: Promise<{ token: string; path: string[] }> };
@@ -41,17 +41,43 @@ export async function GET(_request: Request, context: RouteContext) {
     return new NextResponse("Not found", { status: 404 });
   }
 
-  // Authorize the specific asset: it must appear in this project's task
-  // descriptions or comments (which store the original /api/uploads/<key> ref).
+  // The public board only shows the Main (default) branch, so authorization is
+  // scoped to Main's content — a feature-branch task's embedded image must not
+  // be served through the public token.
+  const [defaultBranch] = await db
+    .select({ id: branches.id })
+    .from(branches)
+    .where(and(eq(branches.projectId, project.id), eq(branches.isDefault, true)))
+    .limit(1);
+  const defaultBranchId = defaultBranch?.id ?? null;
+
+  // Authorize the specific asset: it must appear in a Main-branch task
+  // description or a comment on a Main-branch task (which store the original
+  // /api/uploads/<key> ref).
   const [taskRows, commentRows] = await Promise.all([
     db
       .select({ content: tasks.description })
       .from(tasks)
-      .where(eq(tasks.projectId, project.id)),
+      .where(
+        defaultBranchId
+          ? and(
+              eq(tasks.projectId, project.id),
+              eq(tasks.branchId, defaultBranchId),
+            )
+          : eq(tasks.projectId, project.id),
+      ),
     db
       .select({ content: taskComments.content })
       .from(taskComments)
-      .where(eq(taskComments.projectId, project.id)),
+      .innerJoin(tasks, eq(tasks.id, taskComments.taskId))
+      .where(
+        defaultBranchId
+          ? and(
+              eq(taskComments.projectId, project.id),
+              eq(tasks.branchId, defaultBranchId),
+            )
+          : eq(taskComments.projectId, project.id),
+      ),
   ]);
   const referenced = [...taskRows, ...commentRows].some((row) =>
     row.content?.includes(key),

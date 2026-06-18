@@ -29,6 +29,9 @@ export const FLASH_MESSAGES: Record<
   "status-published": { message: "Client update published", variant: "success" },
   "status-removed": { message: "Client update deleted", variant: "success" },
   "request-converted": { message: "Converted to task", variant: "success" },
+  "branch-created": { message: "Branch created", variant: "success" },
+  "branch-updated": { message: "Branch updated", variant: "success" },
+  "branch-deleted": { message: "Branch deleted", variant: "success" },
 };
 
 export type FlashKey = keyof typeof FLASH_MESSAGES;

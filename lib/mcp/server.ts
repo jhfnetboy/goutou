@@ -14,6 +14,18 @@ import type { Viewer } from "@/lib/auth-server";
 import type { TokenAuth } from "@/lib/auth-token";
 import { requestStatusValues, taskStatusValues } from "@/lib/db/schema";
 import {
+  createBranch,
+  createBranchInputSchema,
+  deleteBranch,
+  deleteBranchInputSchema,
+  listBranches,
+  listBranchesInputSchema,
+  moveTaskToBranch,
+  moveTaskToBranchInputSchema,
+  renameBranch,
+  renameBranchInputSchema,
+} from "@/lib/services/branches";
+import {
   createTaskCategory,
   createTaskCategoryInputSchema,
   deleteTaskCategory,
@@ -219,11 +231,12 @@ function registerReadTools(server: McpServer, viewer: Viewer) {
     {
       title: "List tasks",
       description:
-        "List tasks in projects you can access. Filter by projectId, status (todo/doing/done), or assignedToMe. Capped at 100 — use filters to narrow. Read-only.",
+        "List tasks in projects you can access. Filter by projectId, status (todo/doing/done), assignedToMe, or branch (a branch id from list-branches — omit to list across all branches). Capped at 100 — use filters to narrow. Read-only.",
       inputSchema: {
         projectId: z.string().optional(),
         status: z.enum(taskStatusValues).optional(),
         assignedToMe: z.boolean().optional(),
+        branchId: z.string().optional(),
       },
       annotations: { readOnlyHint: true },
     },
@@ -240,6 +253,18 @@ function registerReadTools(server: McpServer, viewer: Viewer) {
       annotations: { readOnlyHint: true },
     },
     async (args) => jsonResult(await readTask(viewer, args)),
+  );
+
+  server.registerTool(
+    "list-branches",
+    {
+      title: "List branches",
+      description:
+        "List a project's branches (git-like workstreams). Each has an id, name, whether it's the default 'Main' branch, its creator, and how many tasks/requests it holds. Use a branch id to scope list-tasks / list-requests / create-task / create-request, or as the target of move-task-to-branch. Returns [] if you can't access the project. Read-only.",
+      inputSchema: listBranchesInputSchema.shape,
+      annotations: { readOnlyHint: true },
+    },
+    async (args) => jsonResult(await listBranches(viewer, args)),
   );
 
   server.registerTool(
@@ -271,10 +296,11 @@ function registerReadTools(server: McpServer, viewer: Viewer) {
     {
       title: "List requests",
       description:
-        "List client requests in projects you can access. Filter by projectId or status. Read-only.",
+        "List client requests in projects you can access. Filter by projectId, status, or branch (a branch id from list-branches — omit to list across all branches). Read-only.",
       inputSchema: {
         projectId: z.string().optional(),
         status: z.enum(requestStatusValues).optional(),
+        branchId: z.string().optional(),
       },
       annotations: { readOnlyHint: true },
     },
@@ -494,6 +520,70 @@ function registerWriteTools(server: McpServer, viewer: Viewer) {
       },
     },
     async (args) => runWrite(() => deleteTask(viewer, args)),
+  );
+
+  server.registerTool(
+    "create-branch",
+    {
+      title: "Create branch",
+      description:
+        "Create a new branch (git-like workstream) in a project. Starts EMPTY — add tasks/requests to it with create-task / create-request (passing this branchId) or move existing ones with move-task-to-branch. Any project member can create a branch. CONFIRM the name with the user. Returns the new branchId.",
+      inputSchema: createBranchInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+      },
+    },
+    async (args) => runWrite(() => createBranch(viewer, args)),
+  );
+
+  server.registerTool(
+    "rename-branch",
+    {
+      title: "Rename branch",
+      description:
+        "Rename a branch and/or update its description. Only the branch creator or the project owner may. Omit a field to keep it. CONFIRM with the user.",
+      inputSchema: renameBranchInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => renameBranch(viewer, args)),
+  );
+
+  server.registerTool(
+    "move-task-to-branch",
+    {
+      title: "Move task to branch",
+      description:
+        "Move a task onto a different branch within the same project (the task keeps its code, comments, checklist, and labels). Get the target branchId from list-branches. CONFIRM with the user.",
+      inputSchema: moveTaskToBranchInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => moveTaskToBranch(viewer, args)),
+  );
+
+  server.registerTool(
+    "delete-branch",
+    {
+      title: "Delete branch",
+      description:
+        "Permanently delete a branch AND all of its tasks and requests (cascade). The default 'Main' branch cannot be deleted. Only the branch creator or project owner may. CONFIRM with the user — this cannot be undone.",
+      inputSchema: deleteBranchInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => deleteBranch(viewer, args)),
   );
 
   server.registerTool(

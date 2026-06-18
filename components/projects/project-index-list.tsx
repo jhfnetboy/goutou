@@ -7,6 +7,7 @@ import {
   ArrowSquareOut,
   ChatCircleText,
   Folders,
+  GitBranch,
   MagnifyingGlass,
 } from "@phosphor-icons/react";
 
@@ -111,6 +112,15 @@ export function ProjectIndexList({ projects, view }: Props) {
                       {project.isOverdue ? (
                         <span className="inline-flex rounded-sm border border-danger/30 bg-danger/10 px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-[0.04em] text-danger">
                           overdue
+                        </span>
+                      ) : null}
+                      {project.branchCount > 1 ? (
+                        <span
+                          title="Counts below span all branches"
+                          className="inline-flex items-center gap-1 rounded-sm border border-border bg-surface px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-[0.04em] text-muted"
+                        >
+                          <GitBranch className="size-3" />
+                          {project.branchCount} branches
                         </span>
                       ) : null}
                     </div>

@@ -25,6 +25,7 @@ import {
 } from "@/lib/codes";
 import { getDb } from "@/lib/db";
 import {
+  branches,
   clientRequests,
   projectNotes,
   projects,
@@ -221,23 +222,37 @@ export async function createProject(
   const projectId = crypto.randomUUID();
   const slug = await resolveSlugForCreate(input.slug, input.name);
 
-  await db.insert(projects).values({
-    id: projectId,
-    ownerId: viewer.id,
-    name: input.name,
-    slug,
-    clientName: input.clientName ?? null,
-    summary: input.summary ?? null,
-    status: input.status,
-    deadline: parseDate(input.deadline),
-    color: input.color ? input.color : null,
-    archivedAt: null,
-    // Public-view default: show the board and the commit log, but keep full
-    // task descriptions private until the owner opts in.
-    clientShareShowDescription: false,
-    createdAt: now,
-    updatedAt: now,
-  });
+  // A project never exists without its default "Main" branch — insert both in
+  // one atomic batch so task/request creation can always resolve a branch.
+  await db.batch([
+    db.insert(projects).values({
+      id: projectId,
+      ownerId: viewer.id,
+      name: input.name,
+      slug,
+      clientName: input.clientName ?? null,
+      summary: input.summary ?? null,
+      status: input.status,
+      deadline: parseDate(input.deadline),
+      color: input.color ? input.color : null,
+      archivedAt: null,
+      // Public-view default: show the board and the commit log, but keep full
+      // task descriptions private until the owner opts in.
+      clientShareShowDescription: false,
+      createdAt: now,
+      updatedAt: now,
+    }),
+    db.insert(branches).values({
+      id: crypto.randomUUID(),
+      projectId,
+      name: "Main",
+      description: null,
+      createdBy: viewer.id,
+      isDefault: true,
+      createdAt: now,
+      updatedAt: now,
+    }),
+  ]);
 
   await logProjectActivity(db, {
     ownerId: viewer.id,
@@ -608,8 +623,13 @@ export async function duplicateProject(
   // Copy the project owner's rows (matches the web action, where the duplicator
   // is the owner). The new workspace is owned by whoever triggered the copy.
   const sourceOwnerId = sourceProject.ownerId;
-  const [sourceRequests, sourceTasks, sourceChecklistItems, sourceNote] =
-    await Promise.all([
+  const [
+    sourceRequests,
+    sourceTasks,
+    sourceChecklistItems,
+    sourceNote,
+    sourceBranches,
+  ] = await Promise.all([
       db
         .select()
         .from(clientRequests)
@@ -650,6 +670,9 @@ export async function duplicateProject(
           ),
         )
         .limit(1),
+      // Branches are project-scoped and shared (no ownerId), so clone all of
+      // them — any owner's task/request may reference any branch.
+      db.select().from(branches).where(eq(branches.projectId, input.projectId)),
     ]);
 
   const now = new Date();
@@ -658,6 +681,7 @@ export async function duplicateProject(
   const newSlug = await resolveSlugForCreate(undefined, newProjectName);
   const requestIdMap = new Map<string, string>();
   const taskIdMap = new Map<string, string>();
+  const branchIdMap = new Map<string, string>();
 
   await db.insert(projects).values({
     id: newProjectId,
@@ -676,6 +700,38 @@ export async function duplicateProject(
     updatedAt: now,
   });
 
+  // Clone branches first — requests and tasks reference them. Every project has
+  // a Main branch (createProject + migration 0030), so sourceBranches is never
+  // empty in practice; the new project's default is the clone of the source's.
+  if (sourceBranches.length) {
+    await db.insert(branches).values(
+      sourceBranches.map((branch) => {
+        const id = crypto.randomUUID();
+        branchIdMap.set(branch.id, id);
+        return {
+          id,
+          projectId: newProjectId,
+          name: branch.name,
+          description: branch.description,
+          createdBy: viewer.id,
+          isDefault: branch.isDefault,
+          createdAt: now,
+          updatedAt: now,
+        };
+      }),
+    );
+  }
+  const sourceDefaultBranch =
+    sourceBranches.find((branch) => branch.isDefault) ?? sourceBranches[0];
+  const newDefaultBranchId = sourceDefaultBranch
+    ? (branchIdMap.get(sourceDefaultBranch.id) ?? null)
+    : null;
+  // Map a source row's branch to its clone, falling back to the new Main so a
+  // cloned task/request is never left without a branch.
+  const remapBranch = (sourceBranchId: string | null) =>
+    (sourceBranchId ? branchIdMap.get(sourceBranchId) : undefined) ??
+    newDefaultBranchId;
+
   // Re-number requests + tasks starting at 1 in the duplicate. Preserve source's
   // created_at order so old codes map predictably to new codes.
   if (sourceRequests.length) {
@@ -691,6 +747,7 @@ export async function duplicateProject(
           id,
           ownerId: viewer.id,
           projectId: newProjectId,
+          branchId: remapBranch(request.branchId),
           title: request.title,
           description: request.description,
           codeNumber: index + 1,
@@ -716,6 +773,7 @@ export async function duplicateProject(
           id,
           ownerId: viewer.id,
           projectId: newProjectId,
+          branchId: remapBranch(task.branchId),
           requestId: task.requestId
             ? (requestIdMap.get(task.requestId) ?? null)
             : null,

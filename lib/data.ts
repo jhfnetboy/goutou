@@ -20,6 +20,7 @@ import { cache } from "react";
 import { getDb } from "@/lib/db";
 import {
   activityActionValues,
+  branches,
   clientRequests,
   dailyTasks,
   notificationReads,
@@ -96,24 +97,41 @@ function bucketLevel(count: number, max: number): 0 | 1 | 2 | 3 | 4 {
   return 4;
 }
 
-function getTaskHref(projectId: string, taskId: string) {
+function getTaskHref(
+  projectId: string,
+  taskId: string,
+  branchId?: string | null,
+) {
   return withSearchParams(`/projects/${projectId}/board`, {
     modal: "task",
     task: taskId,
+    // A task lives on one branch; deep-link to it so the board loads the branch
+    // that actually contains the task (otherwise the modal can't find it).
+    ...(branchId ? { branch: branchId } : {}),
   });
 }
 
-function getTaskStatusUpdateHref(projectId: string, taskId: string) {
+function getTaskStatusUpdateHref(
+  projectId: string,
+  taskId: string,
+  branchId?: string | null,
+) {
   return withSearchParams(`/projects/${projectId}/board`, {
     modal: "status-update",
     task: taskId,
+    ...(branchId ? { branch: branchId } : {}),
   });
 }
 
-function getRequestHref(projectId: string, requestId: string) {
+function getRequestHref(
+  projectId: string,
+  requestId: string,
+  branchId?: string | null,
+) {
   return withSearchParams(`/projects/${projectId}/requests`, {
     modal: "request",
     request: requestId,
+    ...(branchId ? { branch: branchId } : {}),
   });
 }
 
@@ -138,6 +156,7 @@ function buildProjectStats(
   projectList: Awaited<ReturnType<typeof listProjectsForUser>>,
   requestsForOwner: Awaited<ReturnType<typeof getRequestsForUser>>,
   tasksForOwner: Awaited<ReturnType<typeof getTasksForUser>>,
+  branchCountByProject: Map<string, number>,
 ) {
   const now = new Date();
   const today = getStartOfDay(now);
@@ -216,6 +235,9 @@ function buildProjectStats(
       completionRate,
       daysUntilDeadline,
       isOverdue,
+      // Totals above span ALL branches; surface the count so the card can hint
+      // it when a project has more than just Main.
+      branchCount: branchCountByProject.get(project.id) ?? 1,
       pressureScore: openTasks + requestCounts.inbox * 2 + taskCounts.overdue * 3,
     };
   });
@@ -388,6 +410,7 @@ function buildSearchIndex(
   projectList: Awaited<ReturnType<typeof listProjectsForUser>>,
   requestsForOwner: Awaited<ReturnType<typeof getRequestsForUser>>,
   tasksForOwner: Awaited<ReturnType<typeof getTasksForUser>>,
+  defaultBranchByProject: Map<string, string>,
 ) {
   const projectMap = new Map(projectList.map((project) => [project.id, project]));
 
@@ -429,7 +452,11 @@ function buildSearchIndex(
         title: request.title,
         subtitle: `${project.name} • ${request.status}`,
         code,
-        href: getRequestHref(request.projectId, request.id),
+        href: getRequestHref(
+          request.projectId,
+          request.id,
+          branchLinkHint(defaultBranchByProject, request.projectId, request.branchId),
+        ),
         projectId: request.projectId,
         projectName: project.name,
         projectColor: project.color ?? null,
@@ -464,7 +491,11 @@ function buildSearchIndex(
         title: task.title,
         subtitle: `${project.name} • ${task.status}`,
         code,
-        href: getTaskHref(task.projectId, task.id),
+        href: getTaskHref(
+          task.projectId,
+          task.id,
+          branchLinkHint(defaultBranchByProject, task.projectId, task.branchId),
+        ),
         projectId: task.projectId,
         projectName: project.name,
         projectColor: project.color ?? null,
@@ -499,6 +530,7 @@ function buildNotifications(
   requestsForOwner: Awaited<ReturnType<typeof getRequestsForUser>>,
   tasksForOwner: Awaited<ReturnType<typeof getTasksForUser>>,
   statusUpdates: Awaited<ReturnType<typeof getStatusUpdatesForUser>>,
+  defaultBranchByProject: Map<string, string>,
   assignedTaskActivity: Array<{
     id: string;
     taskId: string;
@@ -539,7 +571,11 @@ function buildNotifications(
           tone: "default" as const,
           title: code ? `${code} · ${request.title}` : request.title,
           detail: `Request waiting in ${project.name}`,
-          href: getRequestHref(request.projectId, request.id),
+          href: getRequestHref(
+            request.projectId,
+            request.id,
+            branchLinkHint(defaultBranchByProject, request.projectId, request.branchId),
+          ),
           projectName: project.name,
           createdAt: request.updatedAt,
         };
@@ -570,7 +606,11 @@ function buildNotifications(
             tone: "danger",
             title,
             detail: `Overdue in ${project.name}`,
-            href: getTaskHref(task.projectId, task.id),
+            href: getTaskHref(
+              task.projectId,
+              task.id,
+              branchLinkHint(defaultBranchByProject, task.projectId, task.branchId),
+            ),
             projectName: project.name,
             createdAt: task.updatedAt,
           });
@@ -585,7 +625,11 @@ function buildNotifications(
             tone: "warning",
             title,
             detail: `Due today in ${project.name}`,
-            href: getTaskHref(task.projectId, task.id),
+            href: getTaskHref(
+              task.projectId,
+              task.id,
+              branchLinkHint(defaultBranchByProject, task.projectId, task.branchId),
+            ),
             projectName: project.name,
             createdAt: task.updatedAt,
           });
@@ -597,7 +641,11 @@ function buildNotifications(
             tone: "default",
             title,
             detail: `Publish a client update for ${project.name}`,
-            href: getTaskStatusUpdateHref(task.projectId, task.id),
+            href: getTaskStatusUpdateHref(
+              task.projectId,
+              task.id,
+              branchLinkHint(defaultBranchByProject, task.projectId, task.branchId),
+            ),
             projectName: project.name,
             createdAt: task.updatedAt,
           });
@@ -618,7 +666,11 @@ function buildNotifications(
           tone: "default" as const,
           title,
           detail: `${activity.actorName} ${activity.label.toLowerCase()}${activity.detail ? ` — ${activity.detail}` : ""}`,
-          href: getTaskHref(task.projectId, task.id),
+          href: getTaskHref(
+            task.projectId,
+            task.id,
+            branchLinkHint(defaultBranchByProject, task.projectId, task.branchId),
+          ),
           projectName: project.name,
           createdAt: activity.createdAt,
         };
@@ -791,6 +843,17 @@ export async function getPublicProjectBoard(shareToken: string) {
 
   const projectId = project.id;
 
+  // The public client board always shows ONLY the project's Main (default)
+  // branch — feature branches are internal to project members and must never
+  // leak through the share link. Branch selection is never honored from the
+  // public token URL; it is resolved server-side here.
+  const [defaultBranch] = await db
+    .select({ id: branches.id })
+    .from(branches)
+    .where(and(eq(branches.projectId, projectId), eq(branches.isDefault, true)))
+    .limit(1);
+  const defaultBranchId = defaultBranch?.id ?? null;
+
   const [boardTasks, statusUpdates, checklistItems] =
     await Promise.all([
       db
@@ -811,7 +874,14 @@ export async function getPublicProjectBoard(shareToken: string) {
           updatedAt: tasks.updatedAt,
         })
         .from(tasks)
-        .where(eq(tasks.projectId, projectId))
+        .where(
+          defaultBranchId
+            ? and(
+                eq(tasks.projectId, projectId),
+                eq(tasks.branchId, defaultBranchId),
+              )
+            : eq(tasks.projectId, projectId),
+        )
         .orderBy(asc(tasks.sortOrder), desc(tasks.updatedAt)),
       db
         // Only the columns the public board renders — never spread the raw
@@ -824,7 +894,18 @@ export async function getPublicProjectBoard(shareToken: string) {
           createdAt: projectStatusUpdates.createdAt,
         })
         .from(projectStatusUpdates)
-        .where(eq(projectStatusUpdates.projectId, projectId))
+        // Commits are published from a task, so scope them to Main too —
+        // otherwise a client update for a feature-branch task would leak onto
+        // the public board. taskId is NOT NULL, so the inner join drops nothing.
+        .innerJoin(tasks, eq(tasks.id, projectStatusUpdates.taskId))
+        .where(
+          defaultBranchId
+            ? and(
+                eq(projectStatusUpdates.projectId, projectId),
+                eq(tasks.branchId, defaultBranchId),
+              )
+            : eq(projectStatusUpdates.projectId, projectId),
+        )
         .orderBy(desc(projectStatusUpdates.createdAt)),
       db
         .select({
@@ -934,9 +1015,90 @@ export async function getRecentActivityForUser(
   });
 }
 
+// The branch a task lives on (or null if it doesn't exist / no access). Used by
+// the board page to self-correct a deep link that targets a task on a different
+// branch than the one being viewed, so the task modal always resolves.
+export async function getTaskBranchId(
+  projectId: string,
+  taskId: string,
+  viewer: ProjectViewer,
+): Promise<string | null> {
+  if (!(await canAccessProject(viewer, projectId))) return null;
+  const db = getDb();
+  const [row] = await db
+    .select({ branchId: tasks.branchId })
+    .from(tasks)
+    .where(and(eq(tasks.id, taskId), eq(tasks.projectId, projectId)))
+    .limit(1);
+  return row?.branchId ?? null;
+}
+
+// Map of projectId → its default (Main) branch id, for a set of projects. Used
+// by the cross-project deep-link builders to drop ?branch when an item is on
+// Main (keeping those URLs clean) while still tagging feature-branch items.
+async function getDefaultBranchMap(
+  projectIds: string[],
+): Promise<Map<string, string>> {
+  if (!projectIds.length) return new Map();
+  const db = getDb();
+  const rows = await db
+    .select({ projectId: branches.projectId, id: branches.id })
+    .from(branches)
+    .where(
+      and(inArray(branches.projectId, projectIds), eq(branches.isDefault, true)),
+    );
+  return new Map(rows.map((row) => [row.projectId, row.id]));
+}
+
+// Map of projectId → its total branch count, for a set of projects. Powers the
+// "N branches" hint on dashboard cards (whose task/request totals span branches).
+async function getBranchCountMap(
+  projectIds: string[],
+): Promise<Map<string, number>> {
+  if (!projectIds.length) return new Map();
+  const db = getDb();
+  const rows = await db
+    .select({ projectId: branches.projectId, n: count() })
+    .from(branches)
+    .where(inArray(branches.projectId, projectIds))
+    .groupBy(branches.projectId);
+  return new Map(rows.map((row) => [row.projectId, row.n]));
+}
+
+// A task/request's branch id for deep-linking — null when it's the project's
+// default branch (so the link stays clean and lands on Main).
+function branchLinkHint(
+  defaultBranchByProject: Map<string, string>,
+  projectId: string,
+  branchId: string | null,
+): string | null {
+  if (!branchId) return null;
+  return branchId === defaultBranchByProject.get(projectId) ? null : branchId;
+}
+
+// The branch a request lives on (or null). Symmetric to getTaskBranchId — lets
+// the requests page self-correct a deep link to a request on another branch.
+export async function getRequestBranchId(
+  projectId: string,
+  requestId: string,
+  viewer: ProjectViewer,
+): Promise<string | null> {
+  if (!(await canAccessProject(viewer, projectId))) return null;
+  const db = getDb();
+  const [row] = await db
+    .select({ branchId: clientRequests.branchId })
+    .from(clientRequests)
+    .where(
+      and(eq(clientRequests.id, requestId), eq(clientRequests.projectId, projectId)),
+    )
+    .limit(1);
+  return row?.branchId ?? null;
+}
+
 export async function getProjectWorkspace(
   projectId: string,
   viewer: ProjectViewer,
+  requestedBranchId?: string,
 ) {
   if (!(await canAccessProject(viewer, projectId))) return null;
 
@@ -950,6 +1112,27 @@ export async function getProjectWorkspace(
   if (!project) {
     return null;
   }
+
+  // Resolve the branch to show. The full branch list drives the header
+  // switcher; the requested id is honored only if it belongs to this project
+  // (a stale/garbage ?branch falls back to Main rather than erroring), and Main
+  // is the default when none is requested.
+  const branchList = await db
+    .select({
+      id: branches.id,
+      name: branches.name,
+      isDefault: branches.isDefault,
+    })
+    .from(branches)
+    .where(eq(branches.projectId, projectId))
+    .orderBy(desc(branches.isDefault), asc(branches.name));
+  const defaultBranch =
+    branchList.find((branch) => branch.isDefault) ?? branchList[0];
+  const currentBranch =
+    (requestedBranchId &&
+      branchList.find((branch) => branch.id === requestedBranchId)) ||
+    defaultBranch;
+  const currentBranchId = currentBranch?.id ?? null;
 
   const [
     requests,
@@ -969,12 +1152,23 @@ export async function getProjectWorkspace(
     db
       .select()
       .from(clientRequests)
-      .where(eq(clientRequests.projectId, projectId))
+      .where(
+        currentBranchId
+          ? and(
+              eq(clientRequests.projectId, projectId),
+              eq(clientRequests.branchId, currentBranchId),
+            )
+          : eq(clientRequests.projectId, projectId),
+      )
       .orderBy(desc(clientRequests.updatedAt), desc(clientRequests.createdAt)),
     db
       .select()
       .from(tasks)
-      .where(eq(tasks.projectId, projectId))
+      .where(
+        currentBranchId
+          ? and(eq(tasks.projectId, projectId), eq(tasks.branchId, currentBranchId))
+          : eq(tasks.projectId, projectId),
+      )
       .orderBy(asc(tasks.sortOrder), desc(tasks.updatedAt)),
     db
       .select()
@@ -1127,6 +1321,8 @@ export async function getProjectWorkspace(
 
   return {
     project,
+    branches: branchList,
+    currentBranchId,
     requests,
     tasks: tasksWithLabels,
     checklistItems,
@@ -1147,11 +1343,15 @@ export async function getProjectsDashboardForViewer(
 ) {
   const { allProjects, requestsForOwner, tasksForOwner } =
     await getCollectionsForViewer(viewer);
+  const branchCountByProject = await getBranchCountMap(
+    allProjects.map((project) => project.id),
+  );
 
   const projectsWithStats = buildProjectStats(
     allProjects,
     requestsForOwner,
     tasksForOwner,
+    branchCountByProject,
   );
   const openProjects = projectsWithStats.filter((project) => !project.archivedAt);
   const archivedProjects = projectsWithStats.filter((project) => project.archivedAt);
@@ -1171,7 +1371,15 @@ export async function getSearchIndexForUser(userId: string) {
   const { allProjects, requestsForOwner, tasksForOwner } =
     await getOwnerWorkspaceCollections(userId);
 
-  return buildSearchIndex(allProjects, requestsForOwner, tasksForOwner);
+  const defaultBranchByProject = await getDefaultBranchMap(
+    allProjects.map((project) => project.id),
+  );
+  return buildSearchIndex(
+    allProjects,
+    requestsForOwner,
+    tasksForOwner,
+    defaultBranchByProject,
+  );
 }
 
 /** Activity rows on tasks where the viewer is the assignee, within the TTL
@@ -1316,12 +1524,16 @@ export async function getNotificationsForUser(userId: string) {
   const { allProjects, requestsForOwner, tasksForOwner, statusUpdatesForOwner } =
     collections;
   const openProjects = allProjects.filter((project) => !project.archivedAt);
+  const defaultBranchByProject = await getDefaultBranchMap(
+    openProjects.map((project) => project.id),
+  );
 
   const computed = buildNotifications(
     openProjects,
     requestsForOwner,
     tasksForOwner,
     statusUpdatesForOwner,
+    defaultBranchByProject,
     assignedActivity,
     readMap,
   );
@@ -1356,6 +1568,8 @@ export async function getAppShellDataForViewer(viewer: ProjectViewer) {
     personal.requestsForOwner,
     personal.tasksForOwner,
     personal.statusUpdatesForOwner,
+    // Count-only path: hrefs are discarded, so the branch map isn't needed.
+    new Map<string, string>(),
     assignedActivity,
     readMap,
   ).filter((notification) => isLiveNotification(notification, clearedAt)).length;
@@ -1376,6 +1590,9 @@ export async function getTodayViewForUser(userId: string) {
   });
   const projectList = allProjects.filter((project) => !project.archivedAt);
   const projectMap = new Map(projectList.map((project) => [project.id, project]));
+  const defaultBranchByProject = await getDefaultBranchMap(
+    projectList.map((project) => project.id),
+  );
   const now = new Date();
   const today = getStartOfDay(now);
   const nextWeek = new Date(today.getTime() + 7 * 86_400_000);
@@ -1397,7 +1614,11 @@ export async function getTodayViewForUser(userId: string) {
         projectColor: project.color ?? null,
         projectStatus: project.status,
         code: formatTaskCode(project.slug, task.codeNumber),
-        href: getTaskHref(task.projectId, task.id),
+        href: getTaskHref(
+          task.projectId,
+          task.id,
+          branchLinkHint(defaultBranchByProject, task.projectId, task.branchId),
+        ),
         daysUntilDue,
         isOverdue,
       };
@@ -1592,7 +1813,14 @@ export function computeDashboard(
 ) {
   const { allProjects, requestsForOwner, tasksForOwner, statusUpdatesForOwner } = collections;
 
-  const projectsWithStats = buildProjectStats(allProjects, requestsForOwner, tasksForOwner);
+  // This dashboard doesn't surface the per-project branch hint, so the count
+  // map isn't needed (branchCount defaults to 1 and is unused here).
+  const projectsWithStats = buildProjectStats(
+    allProjects,
+    requestsForOwner,
+    tasksForOwner,
+    new Map<string, number>(),
+  );
   const openProjects = projectsWithStats.filter((project) => !project.archivedAt);
   const projectNameById = new Map(allProjects.map((project) => [project.id, project.name]));
   const projectColorById = new Map(

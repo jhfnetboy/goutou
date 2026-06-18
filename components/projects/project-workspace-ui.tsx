@@ -832,6 +832,8 @@ function ProjectWorkspaceModalHost({
               {
                 action: "create-task",
                 projectId: workspace.project.id,
+                // Create on the branch currently being viewed (not always Main).
+                branchId: workspace.currentBranchId ?? undefined,
                 ...payload,
               },
               { successMessage: "Task created" },
@@ -1504,6 +1506,8 @@ function ProjectWorkspaceModalHost({
               {
                 action: "create-request",
                 projectId: workspace.project.id,
+                // Capture on the branch currently being viewed (not always Main).
+                branchId: workspace.currentBranchId ?? undefined,
                 title: getFormValue(formData, "title"),
                 description: getFormValue(formData, "description"),
                 priority: getFormValue(formData, "priority"),
@@ -1687,7 +1691,20 @@ function ProjectWorkspaceModalHost({
                       </button>
                     </>
                   );
-                })() : (
+                })() : selectedRequest.status === "converted" ? (
+                  // Already converted, but its task isn't on this branch (moved
+                  // to another branch). Never re-offer Convert — that would imply
+                  // it's unconverted; point to where the task lives instead.
+                  <>
+                    <p className="font-mono text-[11px] uppercase tracking-[0.04em] text-muted">
+                      Linked task
+                    </p>
+                    <p className="mt-2 text-[13px] leading-6 text-muted">
+                      Converted — the linked task lives on another branch. Switch
+                      to that branch to open it.
+                    </p>
+                  </>
+                ) : (
                   <ConvertRequestButton
                     projectId={workspace.project.id}
                     requestId={selectedRequest.id}

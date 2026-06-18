@@ -84,6 +84,9 @@ function formatEnteredLabel(iso: string | null | undefined) {
 
 type KanbanBoardProps = {
   projectId: string;
+  // The branch the board is showing — sent with reorders so the server only
+  // renumbers tasks on this branch (never another branch's cards).
+  branchId?: string | null;
   tasks: BoardTask[];
   taskHrefBase?: string;
   readOnly?: boolean;
@@ -969,6 +972,7 @@ function StaticTaskColumn({
 
 export function KanbanBoard({
   projectId,
+  branchId,
   tasks,
   taskHrefBase,
   readOnly = false,
@@ -1018,6 +1022,7 @@ export function KanbanBoard({
         },
         body: JSON.stringify({
           projectId,
+          ...(branchId ? { branchId } : {}),
           columns: {
             todo: nextColumns.todo.map((task) => task.id),
             doing: nextColumns.doing.map((task) => task.id),

@@ -23,6 +23,7 @@ import {
   isUniqueConstraintError,
   nextRequestCodeNumber,
   optionalText,
+  resolveBranchId,
 } from "@/lib/services/_shared";
 
 const descriptionField = optionalText.describe(
@@ -31,6 +32,9 @@ const descriptionField = optionalText.describe(
 
 export const createRequestInputSchema = z.object({
   projectId: z.string().min(1),
+  branchId: optionalText.describe(
+    "Branch id to capture the requirement on (an id, not a name; get it from list-branches). Defaults to the project's Main branch.",
+  ),
   title: z.string().trim().min(1).max(140),
   description: descriptionField,
   priority: z.enum(priorityValues).default("medium"),
@@ -64,6 +68,7 @@ export async function createRequest(
   const requestId = crypto.randomUUID();
   const description = normalizeRichTextInput(input.description);
   const slug = await getProjectSlug(input.projectId);
+  const branchId = await resolveBranchId(input.branchId, input.projectId);
 
   // Retry MAX+1 code allocation on a concurrent collision against the
   // UNIQUE(project_id, code_number) index (web + MCP can both create). The
@@ -77,6 +82,7 @@ export async function createRequest(
           id: requestId,
           ownerId: viewer.id,
           projectId: input.projectId,
+          branchId,
           title: input.title,
           description: description ?? null,
           codeNumber,

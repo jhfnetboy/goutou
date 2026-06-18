@@ -3,10 +3,12 @@ import Link from "next/link";
 import { CalendarDots, StackSimple } from "@phosphor-icons/react/dist/ssr";
 import { notFound } from "next/navigation";
 
+import { BranchIndicator } from "@/components/projects/branch-switcher";
 import { CopyPublicLink } from "@/components/projects/copy-public-link";
 import { ProjectTabs } from "@/components/projects/project-tabs";
 import { requireViewer } from "@/lib/auth-server";
 import { getProjectForUser } from "@/lib/data";
+import { listBranches } from "@/lib/services/branches";
 import { serverEnv } from "@/lib/env";
 import { formatProjectStatus } from "@/lib/project-status";
 import { cn, formatDate } from "@/lib/utils";
@@ -27,6 +29,13 @@ export default async function ProjectLayout({
   if (!project) {
     notFound();
   }
+
+  const branchList = await listBranches(viewer, { projectId });
+  const branchOptions = branchList.map((branch) => ({
+    id: branch.id,
+    name: branch.name,
+    isDefault: branch.isDefault,
+  }));
 
   const hasColor = Boolean(project.color);
   const headerStyle: CSSProperties | undefined = hasColor
@@ -97,13 +106,21 @@ export default async function ProjectLayout({
 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <ProjectTabs projectId={project.id} />
-            <CopyPublicLink
-              enabled={project.clientShareEnabled}
-              token={project.clientShareToken}
-              baseUrl={serverEnv.betterAuthUrl}
-              projectId={project.id}
-              settingsHref={`/projects/${project.id}/settings`}
-            />
+            <div className="flex flex-wrap items-center gap-3">
+              {branchOptions.length ? (
+                <BranchIndicator
+                  projectId={project.id}
+                  branches={branchOptions}
+                />
+              ) : null}
+              <CopyPublicLink
+                enabled={project.clientShareEnabled}
+                token={project.clientShareToken}
+                baseUrl={serverEnv.betterAuthUrl}
+                projectId={project.id}
+                settingsHref={`/projects/${project.id}/settings`}
+              />
+            </div>
           </div>
         </div>
       </section>

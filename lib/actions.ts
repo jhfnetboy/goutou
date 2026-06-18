@@ -72,6 +72,12 @@ import {
   setProjectSlug as setProjectSlugService,
   updateProject as updateProjectService,
 } from "@/lib/services/projects";
+import {
+  createBranch as createBranchService,
+  deleteBranch as deleteBranchService,
+  renameBranch as renameBranchService,
+} from "@/lib/services/branches";
+import { resolveDefaultBranchId } from "@/lib/services/_shared";
 import { isValidProjectColor } from "@/lib/swatches";
 import {
   clientRequests,
@@ -408,6 +414,7 @@ async function loadProjectTask(taskId: string, projectId: string) {
 async function getNextTaskSortOrder(
   projectId: string,
   status: (typeof taskStatusValues)[number],
+  branchId: string,
 ) {
   const db = getDb();
   const [latest] = await db
@@ -415,7 +422,13 @@ async function getNextTaskSortOrder(
       sortOrder: tasks.sortOrder,
     })
     .from(tasks)
-    .where(and(eq(tasks.projectId, projectId), eq(tasks.status, status)))
+    .where(
+      and(
+        eq(tasks.projectId, projectId),
+        eq(tasks.branchId, branchId),
+        eq(tasks.status, status),
+      ),
+    )
     .orderBy(desc(tasks.sortOrder))
     .limit(1);
 
@@ -533,6 +546,91 @@ export async function createProjectAction(formData: FormData) {
 
   revalidateWorkspaceCollections();
   redirect(withFlash(`/projects/${projectId}`, "project-created"));
+}
+
+const branchCreateSchema = z.object({
+  projectId: z.string().min(1),
+  name: z.string().trim().min(1).max(60),
+  description: z.string().trim().max(500).optional(),
+});
+
+export async function createBranchAction(formData: FormData) {
+  const viewer = await requireViewer();
+  const payload = branchCreateSchema.parse(toPayload(formData));
+
+  const { branchId } = await createBranchService(viewer, {
+    projectId: payload.projectId,
+    name: payload.name,
+    description: payload.description,
+  });
+
+  // Branches affect the board/requests views and the branches list itself.
+  revalidateProjectViews(payload.projectId, {
+    overview: true,
+    board: true,
+    requests: true,
+  });
+  revalidatePath(`/projects/${payload.projectId}/branches`);
+  // Land on the new (empty) branch's board so the user can start adding work.
+  redirect(
+    withFlash(
+      withSearchParams(`/projects/${payload.projectId}/board`, {
+        branch: branchId,
+      }),
+      "branch-created",
+    ),
+  );
+}
+
+const branchRenameSchema = z.object({
+  projectId: z.string().min(1),
+  branchId: z.string().min(1),
+  name: z.string().trim().min(1).max(60).optional(),
+  description: z.string().trim().max(500).optional(),
+});
+
+export async function renameBranchAction(formData: FormData) {
+  const viewer = await requireViewer();
+  const payload = branchRenameSchema.parse(toPayload(formData));
+
+  await renameBranchService(viewer, {
+    branchId: payload.branchId,
+    name: payload.name,
+    description: payload.description,
+  });
+
+  revalidateProjectViews(payload.projectId, {
+    overview: true,
+    board: true,
+    requests: true,
+  });
+  revalidatePath(`/projects/${payload.projectId}/branches`);
+  redirect(`/projects/${payload.projectId}/branches`);
+}
+
+const branchDeleteSchema = z.object({
+  projectId: z.string().min(1),
+  branchId: z.string().min(1),
+});
+
+export async function deleteBranchAction(formData: FormData) {
+  const viewer = await requireViewer();
+  const payload = branchDeleteSchema.parse(toPayload(formData));
+
+  await deleteBranchService(viewer, { branchId: payload.branchId });
+
+  // Deleting a branch removes its tasks/requests, so refresh every workspace
+  // surface and the projects index (task counts change).
+  revalidateProjectViews(payload.projectId, {
+    projects: true,
+    today: true,
+    overview: true,
+    board: true,
+    requests: true,
+    clientBoard: true,
+  });
+  revalidatePath(`/projects/${payload.projectId}/branches`);
+  redirect(withFlash(`/projects/${payload.projectId}/branches`, "branch-deleted"));
 }
 
 export async function updateProjectAction(formData: FormData) {
@@ -988,7 +1086,14 @@ export async function convertRequestToTaskAction(formData: FormData) {
   const now = new Date();
 
   if (!existingTask) {
-    const sortOrder = await getNextTaskSortOrder(payload.projectId, "todo");
+    // The task lives on the same branch as the request it came from.
+    const branchId =
+      request.branchId ?? (await resolveDefaultBranchId(payload.projectId));
+    const sortOrder = await getNextTaskSortOrder(
+      payload.projectId,
+      "todo",
+      branchId,
+    );
     const codeNumber = await nextTaskCodeNumber(payload.projectId);
 
     await db.insert(tasks).values({
@@ -997,6 +1102,7 @@ export async function convertRequestToTaskAction(formData: FormData) {
       id: crypto.randomUUID(),
       ownerId: session.user.id,
       projectId: payload.projectId,
+      branchId,
       requestId: request.id,
       // Match createTaskInputSchema's max(140) so the converted task stays
       // editable through the normal update path.
@@ -1055,7 +1161,12 @@ export async function createTaskAction(formData: FormData) {
 
   const project = await assertProjectTaskAccess(viewer, payload.projectId);
 
-  const sortOrder = await getNextTaskSortOrder(payload.projectId, "todo");
+  const branchId = await resolveDefaultBranchId(payload.projectId);
+  const sortOrder = await getNextTaskSortOrder(
+    payload.projectId,
+    "todo",
+    branchId,
+  );
   const taskId = crypto.randomUUID();
   const codeNumber = await nextTaskCodeNumber(payload.projectId);
   const code = formatTaskCode(project.slug, codeNumber);
@@ -1081,6 +1192,7 @@ export async function createTaskAction(formData: FormData) {
     id: taskId,
     ownerId: viewer.id,
     projectId: payload.projectId,
+    branchId,
     requestId,
     title: payload.title,
     description: payload.description ?? null,
@@ -1134,10 +1246,12 @@ export async function updateTaskAction(formData: FormData) {
 
   const existingTask = await loadProjectTask(payload.taskId, payload.projectId);
 
+  const branchId =
+    existingTask.branchId ?? (await resolveDefaultBranchId(payload.projectId));
   const nextSortOrder =
     existingTask.status === payload.status
       ? existingTask.sortOrder
-      : await getNextTaskSortOrder(payload.projectId, payload.status);
+      : await getNextTaskSortOrder(payload.projectId, payload.status, branchId);
   const now = new Date();
 
   const category = await resolveCategoryById(payload.categoryId, payload.projectId);
@@ -1995,9 +2109,11 @@ export async function createDailyTaskAction(formData: FormData) {
       }
       linkedTaskId = task.id;
     } else if (payload.bindToBoard) {
-      // Push: create a fresh card on the project's Execution Board.
+      // Push: create a fresh card on the project's Execution Board. Daily ops
+      // isn't branch-aware, so the card lands on the project's Main branch.
       const project = await assertProjectOwnership(projectId, viewer.id);
-      const sortOrder = await getNextTaskSortOrder(projectId, "todo");
+      const branchId = await resolveDefaultBranchId(projectId);
+      const sortOrder = await getNextTaskSortOrder(projectId, "todo", branchId);
       const newTaskId = crypto.randomUUID();
       const codeNumber = await nextTaskCodeNumber(projectId);
       const code = formatTaskCode(project.slug, codeNumber);
@@ -2006,6 +2122,7 @@ export async function createDailyTaskAction(formData: FormData) {
         id: newTaskId,
         ownerId: viewer.id,
         projectId,
+        branchId,
         assigneeId: ownerId,
         title: payload.title,
         description: payload.description ?? null,
@@ -2266,7 +2383,8 @@ export async function adminCreateDailyTaskForUsersAction(formData: FormData) {
       payload.bindToBoard &&
       !sharedLinkedTaskId
     ) {
-      const sortOrder = await getNextTaskSortOrder(project.id, "todo");
+      const branchId = await resolveDefaultBranchId(project.id);
+      const sortOrder = await getNextTaskSortOrder(project.id, "todo", branchId);
       const newTaskId = crypto.randomUUID();
       const codeNumber = await nextTaskCodeNumber(project.id);
       const code = formatTaskCode(project.slug, codeNumber);
@@ -2274,6 +2392,7 @@ export async function adminCreateDailyTaskForUsersAction(formData: FormData) {
         id: newTaskId,
         ownerId: project.ownerId,
         projectId: project.id,
+        branchId,
         assigneeId: recipientId,
         title: payload.title,
         description: payload.description ?? null,

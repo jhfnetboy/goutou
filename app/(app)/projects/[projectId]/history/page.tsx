@@ -13,6 +13,7 @@ import {
   listProjectActivityActors,
   type ProjectActivityFilters,
 } from "@/lib/data";
+import { branchPath } from "@/lib/branch-path";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,7 @@ type PageProps = {
     actor?: string | string[];
     action?: string | string[];
     field?: string | string[];
+    branch?: string | string[];
   }>;
 };
 
@@ -64,7 +66,13 @@ export default async function ProjectHistoryPage({
   const { projectId } = await params;
   const raw = await searchParams;
 
-  const workspace = await getProjectWorkspace(projectId, viewer);
+  // Activity is project-wide (spans all branches by design); the branch param is
+  // honored only to keep the header switcher + tab links on the same branch.
+  const workspace = await getProjectWorkspace(
+    projectId,
+    viewer,
+    pickFirst(raw.branch),
+  );
   if (!workspace) {
     notFound();
   }
@@ -83,7 +91,11 @@ export default async function ProjectHistoryPage({
     listProjectActivityActors(projectId, viewer),
   ]);
 
-  const currentPath = `/projects/${projectId}/history`;
+  const currentPath = branchPath(
+    `/projects/${projectId}/history`,
+    workspace.branches,
+    workspace.currentBranchId,
+  );
   const qString = pickFirst(raw.q) ?? "";
   const fromString = pickFirst(raw.from) ?? "";
   const toString = pickFirst(raw.to) ?? "";
