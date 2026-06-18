@@ -5,10 +5,12 @@ import { useMemo, useState } from "react";
 import {
   Archive,
   ArrowSquareOut,
+  Buildings,
   ChatCircleText,
   Folders,
   GitBranch,
   MagnifyingGlass,
+  User,
 } from "@phosphor-icons/react";
 
 import { formatProjectStatus } from "@/lib/project-status";
@@ -53,6 +55,146 @@ export function ProjectIndexList({ projects, view }: Props) {
     });
   }, [projects, query]);
 
+  // Group the (filtered) projects by their space — Personal first, then company
+  // spaces alphabetically — so the list reads as space-grouped sections.
+  const groups = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        key: string;
+        label: string;
+        kind: "personal" | "company" | null;
+        items: typeof filtered;
+      }
+    >();
+    for (const project of filtered) {
+      const key = project.spaceId ?? "personal";
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          label: project.spaceName ?? "Personal",
+          kind: project.spaceKind,
+          items: [],
+        });
+      }
+      map.get(key)!.items.push(project);
+    }
+    return [...map.values()].sort((a, b) => {
+      const ap = a.kind === "personal" ? 0 : 1;
+      const bp = b.kind === "personal" ? 0 : 1;
+      if (ap !== bp) return ap - bp;
+      return a.label.localeCompare(b.label);
+    });
+  }, [filtered]);
+  const showGroups = groups.length > 1;
+
+  const renderRow = (project: (typeof projects)[number]) => {
+    const colorStyle = project.color
+      ? {
+          borderLeftWidth: 3,
+          borderLeftColor: project.color,
+          backgroundColor: `color-mix(in srgb, ${project.color} 8%, transparent)`,
+        }
+      : undefined;
+    return (
+      <Link
+        key={project.id}
+        href={`/projects/${project.id}`}
+        className={cn(
+          "group rounded-md border border-border px-4 py-3 transition hover:border-border-strong",
+          project.color ? null : "bg-surface hover:bg-surface-strong",
+        )}
+        style={colorStyle}
+      >
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="flex flex-wrap gap-1.5">
+              <span
+                className={cn(
+                  "inline-flex rounded-sm border px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-[0.04em]",
+                  projectStatusBadgeClassNames[project.status],
+                )}
+              >
+                {formatProjectStatus(project.status)}
+              </span>
+              {project.archivedAt ? (
+                <span className="ui-badge">archived</span>
+              ) : null}
+              {project.isOverdue ? (
+                <span className="inline-flex rounded-sm border border-danger/30 bg-danger/10 px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-[0.04em] text-danger">
+                  overdue
+                </span>
+              ) : null}
+              {project.branchCount > 1 ? (
+                <span
+                  title="Counts below span all branches"
+                  className="inline-flex items-center gap-1 rounded-sm border border-border bg-surface px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-[0.04em] text-muted"
+                >
+                  <GitBranch className="size-3" />
+                  {project.branchCount} branches
+                </span>
+              ) : null}
+            </div>
+
+            <div className="min-w-0">
+              <h3 className="truncate text-[15px] font-medium tracking-[-0.011em] text-foreground">
+                {project.name}
+              </h3>
+              {project.clientName && project.clientName !== project.name ? (
+                <p className="mt-0.5 text-[13px] leading-6 text-muted">
+                  {project.clientName}
+                </p>
+              ) : null}
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 lg:max-w-105 lg:flex-1">
+            <div className="rounded-sm border border-border bg-background px-3 py-2">
+              <p className="font-mono text-[11px] font-medium uppercase tracking-[0.04em] text-muted">
+                Inbox
+              </p>
+              <p className="mt-1 font-mono text-base font-medium text-foreground">
+                {project.requestCounts.inbox}
+              </p>
+            </div>
+
+            <div className="rounded-sm border border-border bg-background px-3 py-2">
+              <p className="font-mono text-[11px] font-medium uppercase tracking-[0.04em] text-muted">
+                Doing
+              </p>
+              <p className="mt-1 font-mono text-base font-medium text-foreground">
+                {project.taskCounts.doing}
+              </p>
+            </div>
+
+            <div className="rounded-sm border border-border bg-background px-3 py-2">
+              <p className="font-mono text-[11px] font-medium uppercase tracking-[0.04em] text-muted">
+                Deadline
+              </p>
+              <p className="mt-1 text-[13px] font-medium text-foreground">
+                {project.isOverdue ? "Overdue" : formatDateLabel(project.deadline)}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3 text-[13px] text-muted">
+          <p className="min-w-0 flex-1 truncate leading-6">
+            {project.summary ||
+              "No project summary yet. Add the scope and current focus once the workspace is defined."}
+          </p>
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+            <ChatCircleText className="size-4" />
+            {project.openTasks} open
+          </span>
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-foreground">
+            Open
+            <ArrowSquareOut className="size-4 text-muted transition group-hover:text-foreground" />
+          </span>
+        </div>
+      </Link>
+    );
+  };
+
   return (
     <div className="space-y-4">
       <div className="relative">
@@ -76,114 +218,30 @@ export function ProjectIndexList({ projects, view }: Props) {
       </div>
 
       {filtered.length ? (
-        <div className="grid gap-2">
-          {filtered.map((project) => {
-            const colorStyle = project.color
-              ? {
-                  borderLeftWidth: 3,
-                  borderLeftColor: project.color,
-                  backgroundColor: `color-mix(in srgb, ${project.color} 8%, transparent)`,
-                }
-              : undefined;
-            return (
-              <Link
-                key={project.id}
-                href={`/projects/${project.id}`}
-                className={cn(
-                  "group rounded-md border border-border px-4 py-3 transition hover:border-border-strong",
-                  project.color ? null : "bg-surface hover:bg-surface-strong",
-                )}
-                style={colorStyle}
-              >
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <div className="flex flex-wrap gap-1.5">
-                      <span
-                        className={cn(
-                          "inline-flex rounded-sm border px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-[0.04em]",
-                          projectStatusBadgeClassNames[project.status],
-                        )}
-                      >
-                        {formatProjectStatus(project.status)}
-                      </span>
-                      {project.archivedAt ? (
-                        <span className="ui-badge">archived</span>
-                      ) : null}
-                      {project.isOverdue ? (
-                        <span className="inline-flex rounded-sm border border-danger/30 bg-danger/10 px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-[0.04em] text-danger">
-                          overdue
-                        </span>
-                      ) : null}
-                      {project.branchCount > 1 ? (
-                        <span
-                          title="Counts below span all branches"
-                          className="inline-flex items-center gap-1 rounded-sm border border-border bg-surface px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-[0.04em] text-muted"
-                        >
-                          <GitBranch className="size-3" />
-                          {project.branchCount} branches
-                        </span>
-                      ) : null}
-                    </div>
-
-                    <div className="min-w-0">
-                      <h3 className="truncate text-[15px] font-medium tracking-[-0.011em] text-foreground">
-                        {project.name}
-                      </h3>
-                      {project.clientName && project.clientName !== project.name ? (
-                        <p className="mt-0.5 text-[13px] leading-6 text-muted">
-                          {project.clientName}
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 lg:max-w-105 lg:flex-1">
-                    <div className="rounded-sm border border-border bg-background px-3 py-2">
-                      <p className="font-mono text-[11px] font-medium uppercase tracking-[0.04em] text-muted">
-                        Inbox
-                      </p>
-                      <p className="mt-1 font-mono text-base font-medium text-foreground">
-                        {project.requestCounts.inbox}
-                      </p>
-                    </div>
-
-                    <div className="rounded-sm border border-border bg-background px-3 py-2">
-                      <p className="font-mono text-[11px] font-medium uppercase tracking-[0.04em] text-muted">
-                        Doing
-                      </p>
-                      <p className="mt-1 font-mono text-base font-medium text-foreground">
-                        {project.taskCounts.doing}
-                      </p>
-                    </div>
-
-                    <div className="rounded-sm border border-border bg-background px-3 py-2">
-                      <p className="font-mono text-[11px] font-medium uppercase tracking-[0.04em] text-muted">
-                        Deadline
-                      </p>
-                      <p className="mt-1 text-[13px] font-medium text-foreground">
-                        {project.isOverdue ? "Overdue" : formatDateLabel(project.deadline)}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3 text-[13px] text-muted">
-                  <p className="min-w-0 flex-1 truncate leading-6">
-                    {project.summary ||
-                      "No project summary yet. Add the scope and current focus once the workspace is defined."}
-                  </p>
-                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                    <ChatCircleText className="size-4" />
-                    {project.openTasks} open
+        showGroups ? (
+          <div className="space-y-5">
+            {groups.map((group) => (
+              <div key={group.key} className="space-y-2">
+                <div className="flex items-center gap-2 px-1">
+                  {group.kind === "company" ? (
+                    <Buildings className="size-3.5 text-muted" />
+                  ) : (
+                    <User className="size-3.5 text-muted" />
+                  )}
+                  <span className="font-mono text-[11px] uppercase tracking-[0.04em] text-foreground">
+                    {group.label}
                   </span>
-                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-foreground">
-                    Open
-                    <ArrowSquareOut className="size-4 text-muted transition group-hover:text-foreground" />
+                  <span className="font-mono text-[11px] text-muted">
+                    · {group.items.length}
                   </span>
                 </div>
-              </Link>
-            );
-          })}
-        </div>
+                <div className="grid gap-2">{group.items.map(renderRow)}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="grid gap-2">{filtered.map(renderRow)}</div>
+        )
       ) : query.trim() ? (
         <div className="rounded-md border border-dashed border-border bg-surface px-5 py-12 text-center">
           <div className="mx-auto inline-flex size-10 items-center justify-center rounded-md border border-border bg-background text-muted">

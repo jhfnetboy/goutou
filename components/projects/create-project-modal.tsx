@@ -146,14 +146,18 @@ function SubmitButton() {
   );
 }
 
+type SpaceOption = { id: string; name: string; kind: "personal" | "company" };
+
 export function CreateProjectModal({
   closeHref,
   defaultOpen = false,
   clearUrlOnClose = false,
+  spaces = [],
 }: {
   closeHref: string;
   defaultOpen?: boolean;
   clearUrlOnClose?: boolean;
+  spaces?: SpaceOption[];
 }) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -184,6 +188,29 @@ export function CreateProjectModal({
           description="Set the container first, then open the workspace to handle requests, tasks, and notes without turning this overview into a long form."
         >
           <form action={createProjectAction} className="grid gap-4">
+            {spaces.length > 1 ? (
+              <label className="grid gap-2">
+                <span className="text-sm font-medium text-foreground">Space</span>
+                <select
+                  name="spaceId"
+                  defaultValue={
+                    spaces.find((s) => s.kind === "personal")?.id ?? spaces[0]?.id
+                  }
+                  className="ui-select"
+                >
+                  {spaces.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.kind === "personal" ? "Personal" : s.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[13px] leading-6 text-muted">
+                  Personal is private to you; a company space shares the project
+                  with everyone in it.
+                </p>
+              </label>
+            ) : null}
+
             <NameSlugFields />
 
             <label className="grid gap-2">

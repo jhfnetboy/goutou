@@ -23,6 +23,8 @@ import {
   branches,
   clientRequests,
   dailyTasks,
+  spaces,
+  type SpaceKind,
   notificationReads,
   notifications,
   projectActivity,
@@ -157,6 +159,7 @@ function buildProjectStats(
   requestsForOwner: Awaited<ReturnType<typeof getRequestsForUser>>,
   tasksForOwner: Awaited<ReturnType<typeof getTasksForUser>>,
   branchCountByProject: Map<string, number>,
+  spaceLabelById: Map<string, { name: string; kind: SpaceKind }>,
 ) {
   const now = new Date();
   const today = getStartOfDay(now);
@@ -238,6 +241,12 @@ function buildProjectStats(
       // Totals above span ALL branches; surface the count so the card can hint
       // it when a project has more than just Main.
       branchCount: branchCountByProject.get(project.id) ?? 1,
+      spaceName: project.spaceId
+        ? (spaceLabelById.get(project.spaceId)?.name ?? null)
+        : null,
+      spaceKind: project.spaceId
+        ? (spaceLabelById.get(project.spaceId)?.kind ?? null)
+        : null,
       pressureScore: openTasks + requestCounts.inbox * 2 + taskCounts.overdue * 3,
     };
   });
@@ -1065,6 +1074,21 @@ async function getBranchCountMap(
   return new Map(rows.map((row) => [row.projectId, row.n]));
 }
 
+// Map of spaceId → {name, kind}, for labelling/grouping projects by their space
+// in the sidebar and projects list.
+async function getSpaceLabelMap(
+  spaceIds: Array<string | null>,
+): Promise<Map<string, { name: string; kind: SpaceKind }>> {
+  const ids = [...new Set(spaceIds.filter((id): id is string => Boolean(id)))];
+  if (!ids.length) return new Map();
+  const db = getDb();
+  const rows = await db
+    .select({ id: spaces.id, name: spaces.name, kind: spaces.kind })
+    .from(spaces)
+    .where(inArray(spaces.id, ids));
+  return new Map(rows.map((row) => [row.id, { name: row.name, kind: row.kind }]));
+}
+
 // A task/request's branch id for deep-linking — null when it's the project's
 // default branch (so the link stays clean and lands on Main).
 function branchLinkHint(
@@ -1343,15 +1367,17 @@ export async function getProjectsDashboardForViewer(
 ) {
   const { allProjects, requestsForOwner, tasksForOwner } =
     await getCollectionsForViewer(viewer);
-  const branchCountByProject = await getBranchCountMap(
-    allProjects.map((project) => project.id),
-  );
+  const [branchCountByProject, spaceLabelById] = await Promise.all([
+    getBranchCountMap(allProjects.map((project) => project.id)),
+    getSpaceLabelMap(allProjects.map((project) => project.spaceId)),
+  ]);
 
   const projectsWithStats = buildProjectStats(
     allProjects,
     requestsForOwner,
     tasksForOwner,
     branchCountByProject,
+    spaceLabelById,
   );
   const openProjects = projectsWithStats.filter((project) => !project.archivedAt);
   const archivedProjects = projectsWithStats.filter((project) => project.archivedAt);
@@ -1575,8 +1601,21 @@ export async function getAppShellDataForViewer(viewer: ProjectViewer) {
   ).filter((notification) => isLiveNotification(notification, clearedAt)).length;
   const notificationCount = computedUnread + storedUnread;
 
+  // Attach the space label so the sidebar can group projects by space.
+  const spaceLabels = await getSpaceLabelMap(
+    openProjects.map((p) => p.spaceId),
+  );
+  const projectsWithSpace = openProjects.map((project) => {
+    const label = project.spaceId ? spaceLabels.get(project.spaceId) : undefined;
+    return {
+      ...project,
+      spaceName: label?.name ?? null,
+      spaceKind: label?.kind ?? null,
+    };
+  });
+
   return {
-    projects: openProjects,
+    projects: projectsWithSpace,
     notificationCount,
   };
 }
@@ -1813,13 +1852,14 @@ export function computeDashboard(
 ) {
   const { allProjects, requestsForOwner, tasksForOwner, statusUpdatesForOwner } = collections;
 
-  // This dashboard doesn't surface the per-project branch hint, so the count
-  // map isn't needed (branchCount defaults to 1 and is unused here).
+  // This dashboard surfaces neither the branch hint nor space labels, so those
+  // maps aren't needed (the fields default and are unused here).
   const projectsWithStats = buildProjectStats(
     allProjects,
     requestsForOwner,
     tasksForOwner,
     new Map<string, number>(),
+    new Map<string, { name: string; kind: SpaceKind }>(),
   );
   const openProjects = projectsWithStats.filter((project) => !project.archivedAt);
   const projectNameById = new Map(allProjects.map((project) => [project.id, project.name]));

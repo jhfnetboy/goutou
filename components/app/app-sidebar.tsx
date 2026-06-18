@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
   Bell,
+  Buildings,
   CalendarCheck,
   CalendarDots,
   CaretDown,
@@ -491,6 +492,12 @@ export function AppSidebar({
                 icon={Folders}
                 label="Projects"
                 active={pathname === "/projects"}
+              />
+              <NavItem
+                href="/settings/spaces"
+                icon={Buildings}
+                label="Spaces"
+                active={pathname.startsWith("/settings/spaces")}
               />
               <NavItem
                 href="/settings/tokens"

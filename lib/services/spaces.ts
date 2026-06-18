@@ -169,6 +169,41 @@ export async function listSpaces(viewer: Viewer): Promise<SpaceSummary[]> {
   }));
 }
 
+export type SpaceMemberRow = {
+  userId: string;
+  name: string;
+  email: string;
+  image: string | null;
+  isLead: boolean;
+};
+
+/** Members of a company space (with the lead flagged). Manager-gated. */
+export async function listSpaceMembers(
+  viewer: Viewer,
+  spaceId: string,
+): Promise<SpaceMemberRow[]> {
+  if (!(await canManageSpace(viewer, spaceId))) return [];
+  const db = getDb();
+  const [space] = await db
+    .select({ leadId: spaces.leadId })
+    .from(spaces)
+    .where(eq(spaces.id, spaceId))
+    .limit(1);
+  if (!space) return [];
+  const rows = await db
+    .select({
+      userId: user.id,
+      name: user.name,
+      email: user.email,
+      image: user.image,
+    })
+    .from(spaceMembers)
+    .innerJoin(user, eq(user.id, spaceMembers.userId))
+    .where(eq(spaceMembers.spaceId, spaceId))
+    .orderBy(desc(spaceMembers.createdAt));
+  return rows.map((r) => ({ ...r, isLead: r.userId === space.leadId }));
+}
+
 // --- Input schemas -----------------------------------------------------------
 
 export const createSpaceInputSchema = z.object({

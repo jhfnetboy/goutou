@@ -4,6 +4,7 @@ import { CreateProjectModal } from "@/components/projects/create-project-modal";
 import { ProjectIndexList } from "@/components/projects/project-index-list";
 import { requireViewer } from "@/lib/auth-server";
 import { getProjectsDashboardForViewer } from "@/lib/data";
+import { listSpaces } from "@/lib/services/spaces";
 import { cn, withSearchParams } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -105,6 +106,11 @@ export default async function ProjectsPage({
     ? "archived"
     : "open";
   const dashboard = await getProjectsDashboardForViewer(viewer, view);
+  // Spaces the viewer may create a project in (their Personal + company spaces
+  // they lead / admin), for the create-project picker.
+  const postableSpaces = (await listSpaces(viewer))
+    .filter((s) => s.canPost)
+    .map((s) => ({ id: s.id, name: s.name, kind: s.kind }));
   const currentPath = "/projects";
   const viewPath = buildViewHref(currentPath, view);
   const summary = view === "archived" ? dashboard.archivedSummary : dashboard.summary;
@@ -170,6 +176,7 @@ export default async function ProjectsPage({
                 closeHref={viewPath}
                 clearUrlOnClose={modal === "new-project"}
                 defaultOpen={modal === "new-project"}
+                spaces={postableSpaces}
               />
             </div>
           </div>
