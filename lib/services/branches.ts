@@ -14,7 +14,7 @@ import { z } from "zod";
 
 import { toActivityRow } from "@/lib/activity";
 import type { Viewer } from "@/lib/auth-server";
-import { canAccessProject } from "@/lib/authz";
+import { canAccessProject, canManageProject } from "@/lib/authz";
 import { getDb } from "@/lib/db";
 import {
   branches,
@@ -101,8 +101,8 @@ function isUniqueNameError(error: unknown): boolean {
 
 /**
  * Load a branch for a management op (rename/delete). Requires project access to
- * even see it (opaque "not found" otherwise), then limits the mutation to the
- * branch creator or the project owner.
+ * even see it (opaque "not found" otherwise), then limits the mutation to a
+ * project manager (owner or leader) OR the branch's own creator.
  */
 async function assertBranchManage(viewer: Viewer, branchId: string) {
   const db = getDb();
@@ -115,16 +115,11 @@ async function assertBranchManage(viewer: Viewer, branchId: string) {
   if (!(await canAccessProject(viewer, branch.projectId))) {
     throw new Error("Branch not found.");
   }
-  const [project] = await db
-    .select({ ownerId: projects.ownerId })
-    .from(projects)
-    .where(eq(projects.id, branch.projectId))
-    .limit(1);
-  const isOwner = project?.ownerId === viewer.id;
+  const canManage = await canManageProject(viewer, branch.projectId);
   const isCreator = branch.createdBy === viewer.id;
-  if (!isOwner && !isCreator) {
+  if (!canManage && !isCreator) {
     throw new Error(
-      "Only the branch creator or the project owner can change this branch.",
+      "Only the branch creator, a project leader, or the owner can change this branch.",
     );
   }
   return branch;

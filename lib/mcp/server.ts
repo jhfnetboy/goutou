@@ -57,6 +57,8 @@ import {
   removeProjectMemberInputSchema,
   revokeInvite,
   revokeInviteInputSchema,
+  setProjectMemberRole,
+  setProjectMemberRoleInputSchema,
 } from "@/lib/services/members";
 import {
   archiveProject,
@@ -1134,7 +1136,7 @@ function registerWriteTools(server: McpServer, viewer: Viewer) {
     {
       title: "Add project member",
       description:
-        "Add an EXISTING workspace user to a project, by email or userId. They must already have an account — use create-invite first for someone brand new. Project owner or workspace admin only. CONFIRM with the user.",
+        "Add an EXISTING workspace user to a project, by email or userId, as a 'member' (default) or 'leader'. They must already have an account — use create-invite first for someone brand new. Owner or leader may add Members; only the owner may add a Leader. CONFIRM with the user.",
       inputSchema: addProjectMemberInputSchema.shape,
       annotations: {
         readOnlyHint: false,
@@ -1143,6 +1145,22 @@ function registerWriteTools(server: McpServer, viewer: Viewer) {
       },
     },
     async (args) => runWrite(() => addProjectMember(viewer, args)),
+  );
+
+  server.registerTool(
+    "set-project-member-role",
+    {
+      title: "Set project member role",
+      description:
+        "Change a member's project role between 'leader' and 'member'. Project owner (or workspace admin) only. The project owner's own role can't be changed. CONFIRM with the user.",
+      inputSchema: setProjectMemberRoleInputSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      },
+    },
+    async (args) => runWrite(() => setProjectMemberRole(viewer, args)),
   );
 
   server.registerTool(

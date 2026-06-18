@@ -8,7 +8,7 @@
 // color swatch; the name/color are denormalized onto each task row, so a
 // rename/recolor must cascade to linked tasks. Authz mirrors the web exactly:
 // listing is member-aware (canAccessProject), but creating / editing / deleting
-// a category is owner-only, identical to lib/actions.ts (assertProjectOwnership /
+// a category is owner-only, identical to lib/actions.ts (assertProjectManageship /
 // assertCategoryAccess). No activity logging — the web category actions don't log
 // either, so MCP matches.
 import { asc, count, eq } from "drizzle-orm";
@@ -18,7 +18,7 @@ import type { Viewer } from "@/lib/auth-server";
 import { canAccessProject } from "@/lib/authz";
 import { getDb } from "@/lib/db";
 import { projects, taskCategories, tasks } from "@/lib/db/schema";
-import { assertProjectOwner } from "@/lib/services/_shared";
+import { assertProjectManage } from "@/lib/services/_shared";
 import { isValidProjectColor, PROJECT_SWATCHES } from "@/lib/swatches";
 
 // Default when a caller creates a category without naming a color (the web
@@ -87,7 +87,7 @@ export type DeleteTaskCategoryInput = z.infer<
 /**
  * Resolve a category and assert the viewer owns its project. Opaque
  * "Category not found." for both a missing category and one on a project the
- * viewer doesn't own (mirrors assertProjectOwner's no-oracle posture).
+ * viewer doesn't own (mirrors assertProjectManage's no-oracle posture).
  */
 async function assertCategoryOwner(viewer: Viewer, categoryId: string) {
   const db = getDb();
@@ -160,7 +160,7 @@ export async function createTaskCategory(
   viewer: Viewer,
   input: CreateTaskCategoryInput,
 ): Promise<{ categoryId: string; name: string; color: string }> {
-  await assertProjectOwner(viewer, input.projectId);
+  await assertProjectManage(viewer, input.projectId);
   const db = getDb();
   const id = crypto.randomUUID();
   const now = new Date();

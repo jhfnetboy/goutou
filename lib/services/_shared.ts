@@ -6,7 +6,11 @@ import { and, desc, eq, inArray, max } from "drizzle-orm";
 import { z } from "zod";
 
 import type { Viewer } from "@/lib/auth-server";
-import { canAccessProject } from "@/lib/authz";
+import {
+  canAccessProject,
+  canAdministerProject,
+  canManageProject,
+} from "@/lib/authz";
 import { getDb } from "@/lib/db";
 import {
   branches,
@@ -148,6 +152,44 @@ export async function assertProjectOwner(viewer: Viewer, projectId: string) {
     .limit(1);
 
   if (!project) throw new Error("Project not found.");
+  return project;
+}
+
+/**
+ * Leader-level gate (owner or leader, plus workspace admins): project config +
+ * content — details, labels, categories, notes, client updates, branch
+ * management, request conversion. Opaque "Project not found." for non-managers.
+ */
+export async function assertProjectManage(viewer: Viewer, projectId: string) {
+  const db = getDb();
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+  if (!project) throw new Error("Project not found.");
+  if (!(await canManageProject(viewer, projectId))) {
+    throw new Error("Project not found.");
+  }
+  return project;
+}
+
+/**
+ * Owner-level gate: the structural / destructive / role-granting actions
+ * (delete, archive, duplicate, project key, share link, member roles). Opaque
+ * "Project not found." for everyone below Owner.
+ */
+export async function assertProjectAdminister(viewer: Viewer, projectId: string) {
+  const db = getDb();
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+  if (!project) throw new Error("Project not found.");
+  if (!(await canAdministerProject(viewer, projectId))) {
+    throw new Error("Project not found.");
+  }
   return project;
 }
 

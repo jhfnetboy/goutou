@@ -1,74 +1,78 @@
-import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { requireViewer } from "@/lib/auth-server";
-import { canManageProjectMembers } from "@/lib/authz";
-import { getDb } from "@/lib/db";
-import { projectMembers, projects, user } from "@/lib/db/schema";
-
-const addMemberSchema = z.object({
-  email: z.email().transform((v) => v.toLowerCase()),
-});
+import {
+  addProjectMember,
+  removeProjectMember,
+  setProjectMemberRole,
+} from "@/lib/services/members";
+import { projectMemberRoleValues } from "@/lib/db/schema";
 
 type RouteParams = { params: Promise<{ projectId: string }> };
+
+const addSchema = z.object({
+  email: z.email().transform((v) => v.toLowerCase()),
+  role: z.enum(projectMemberRoleValues).optional(),
+});
+const roleSchema = z.object({
+  userId: z.string().min(1),
+  role: z.enum(projectMemberRoleValues),
+});
+
+// Service errors are surfaced verbatim to the toast; authz uses an opaque
+// "Project not found." so a probe can't tell a missing project from a forbidden
+// one. Return 400 with the message rather than leaking a 403/404 distinction.
+function errorResponse(error: unknown) {
+  const message =
+    error instanceof Error ? error.message : "Could not update members.";
+  return Response.json({ error: message }, { status: 400 });
+}
 
 export async function POST(request: Request, { params }: RouteParams) {
   const viewer = await requireViewer();
   const { projectId } = await params;
 
-  if (!(await canManageProjectMembers(viewer, projectId))) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
-  }
-  let payload: z.infer<typeof addMemberSchema>;
+  let payload: z.infer<typeof addSchema>;
   try {
-    payload = addMemberSchema.parse(await request.json());
+    payload = addSchema.parse(await request.json());
   } catch {
     return Response.json({ error: "Invalid input" }, { status: 400 });
   }
 
-  const db = getDb();
-  const [project] = await db
-    .select({ id: projects.id })
-    .from(projects)
-    .where(eq(projects.id, projectId))
-    .limit(1);
-  if (!project) {
-    return Response.json({ error: "Project not found" }, { status: 404 });
-  }
-
-  const [target] = await db
-    .select({ id: user.id })
-    .from(user)
-    .where(eq(user.email, payload.email))
-    .limit(1);
-  if (!target) {
-    return Response.json(
-      { error: "No user with that email. Invite them first." },
-      { status: 404 },
-    );
-  }
-
-  // Idempotent: skip if already a member.
-  const [existing] = await db
-    .select({ id: projectMembers.id })
-    .from(projectMembers)
-    .where(
-      and(
-        eq(projectMembers.projectId, projectId),
-        eq(projectMembers.userId, target.id),
-      ),
-    )
-    .limit(1);
-
-  if (!existing) {
-    await db.insert(projectMembers).values({
-      id: crypto.randomUUID(),
+  try {
+    await addProjectMember(viewer, {
       projectId,
-      userId: target.id,
-      addedById: viewer.id,
-      createdAt: new Date(),
+      email: payload.email,
+      role: payload.role ?? "member",
     });
+  } catch (error) {
+    return errorResponse(error);
+  }
+
+  revalidatePath(`/projects/${projectId}/settings/members`);
+  return Response.json({ ok: true });
+}
+
+export async function PATCH(request: Request, { params }: RouteParams) {
+  const viewer = await requireViewer();
+  const { projectId } = await params;
+
+  let payload: z.infer<typeof roleSchema>;
+  try {
+    payload = roleSchema.parse(await request.json());
+  } catch {
+    return Response.json({ error: "Invalid input" }, { status: 400 });
+  }
+
+  try {
+    await setProjectMemberRole(viewer, {
+      projectId,
+      userId: payload.userId,
+      role: payload.role,
+    });
+  } catch (error) {
+    return errorResponse(error);
   }
 
   revalidatePath(`/projects/${projectId}/settings/members`);
@@ -78,10 +82,6 @@ export async function POST(request: Request, { params }: RouteParams) {
 export async function DELETE(request: Request, { params }: RouteParams) {
   const viewer = await requireViewer();
   const { projectId } = await params;
-
-  if (!(await canManageProjectMembers(viewer, projectId))) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
-  }
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get("userId");
 
@@ -89,15 +89,11 @@ export async function DELETE(request: Request, { params }: RouteParams) {
     return Response.json({ error: "Missing userId" }, { status: 400 });
   }
 
-  const db = getDb();
-  await db
-    .delete(projectMembers)
-    .where(
-      and(
-        eq(projectMembers.projectId, projectId),
-        eq(projectMembers.userId, userId),
-      ),
-    );
+  try {
+    await removeProjectMember(viewer, { projectId, userId });
+  } catch (error) {
+    return errorResponse(error);
+  }
 
   revalidatePath(`/projects/${projectId}/settings/members`);
   return Response.json({ ok: true });

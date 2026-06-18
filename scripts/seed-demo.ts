@@ -196,6 +196,19 @@ insert(
   ],
 );
 
+// ===================== PROJECT MEMBERS =====================
+// Collaborators on Aurora so the role model is visible: Maya is a Leader (runs
+// the project), Arjun is a Member. The Owner is the workspace owner via
+// projects.owner_id and is never a member row.
+insert(
+  "project_members",
+  ["id", "project_id", "user_id", "role", "added_by_id", "created_at"],
+  [
+    { id: "demo-pm-aurora-maya", project_id: AURORA, user_id: "demo-user-maya", role: "leader", added_by_id: OWNER, created_at: ms(-100) },
+    { id: "demo-pm-aurora-arjun", project_id: AURORA, user_id: "demo-user-arjun", role: "member", added_by_id: OWNER, created_at: ms(-90) },
+  ],
+);
+
 // ===================== TASKS =====================
 const HERO = "demo-task-a1";
 const heroDesc = doc(

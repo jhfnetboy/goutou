@@ -67,6 +67,13 @@ export type ActivityChange = {
 export const userRoleValues = ["owner", "admin", "member"] as const;
 export type UserRole = (typeof userRoleValues)[number];
 
+// Per-project role stored on project_members. The project Owner is NOT a member
+// row — it's projects.ownerId — so membership rows are only "leader" or
+// "member". Leaders run the project day-to-day (config, content, add Members);
+// Members do task/request work. See lib/authz.ts for the capability gates.
+export const projectMemberRoleValues = ["leader", "member"] as const;
+export type ProjectMemberRole = (typeof projectMemberRoleValues)[number];
+
 // Scope of a personal access token. `read` = query-only MCP tools; `readwrite`
 // = also allowed to mutate. A token never exceeds its owner's project access.
 export const tokenScopeValues = ["read", "readwrite"] as const;
@@ -637,6 +644,10 @@ export const projectMembers = sqliteTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    // Per-project role. "member" by default; "leader" is granted by the owner.
+    role: text("role", { enum: projectMemberRoleValues })
+      .notNull()
+      .default("member"),
     addedById: text("added_by_id").references(() => user.id, {
       onDelete: "set null",
     }),

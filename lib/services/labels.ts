@@ -18,7 +18,7 @@ import { getDb } from "@/lib/db";
 import { taskLabels, taskTaskLabels } from "@/lib/db/schema";
 import {
   assertProjectAccess,
-  assertProjectOwner,
+  assertProjectManage,
   assertTaskInProject,
   touchProject,
   touchTask,
@@ -142,7 +142,7 @@ async function assertLabelOwner(viewer: Viewer, labelId: string) {
     .where(eq(taskLabels.id, labelId))
     .limit(1);
   if (!row) throw new Error("Label not found.");
-  await assertProjectOwner(viewer, row.projectId); // owner-only; throws otherwise
+  await assertProjectManage(viewer, row.projectId); // owner-only; throws otherwise
   return row;
 }
 
@@ -186,7 +186,7 @@ export async function createTaskLabel(
   viewer: Viewer,
   input: CreateTaskLabelInput,
 ): Promise<{ labelId: string; name: string; color: string }> {
-  await assertProjectOwner(viewer, input.projectId);
+  await assertProjectManage(viewer, input.projectId);
   const db = getDb();
   const id = crypto.randomUUID();
   const now = new Date();

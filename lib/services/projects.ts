@@ -33,7 +33,12 @@ import {
   taskChecklistItems,
   tasks,
 } from "@/lib/db/schema";
-import { optionalText, parseDate } from "@/lib/services/_shared";
+import {
+  assertProjectAdminister,
+  assertProjectManage,
+  optionalText,
+  parseDate,
+} from "@/lib/services/_shared";
 import { isValidProjectColor } from "@/lib/swatches";
 
 // --- Reusable field validators (mirror the web schemas in lib/actions.ts) ----
@@ -141,26 +146,6 @@ export type SetClientShareVisibilityInput = z.infer<
 >;
 
 // --- Internal helpers --------------------------------------------------------
-
-/**
- * Authority to mutate a project's settings / lifecycle (edit, slug, color,
- * archive, delete, share, duplicate): the project owner only — identical to
- * lib/actions.ts assertProjectOwnership, so an MCP token never exceeds the
- * caller's own web access (admins can manage members on any project, but only
- * the owner edits project settings). Uses the same opaque "Project not found."
- * so a probe can't distinguish a missing project from one the caller can't touch.
- */
-async function assertProjectManage(viewer: Viewer, projectId: string) {
-  const db = getDb();
-  const [project] = await db
-    .select()
-    .from(projects)
-    .where(and(eq(projects.id, projectId), eq(projects.ownerId, viewer.id)))
-    .limit(1);
-
-  if (!project) throw new Error("Project not found.");
-  return project;
-}
 
 async function isSlugTaken(
   slug: string,
@@ -340,7 +325,7 @@ export async function setProjectSlug(
   const db = getDb();
   const now = new Date();
 
-  const project = await assertProjectManage(viewer, input.projectId);
+  const project = await assertProjectAdminister(viewer, input.projectId);
 
   if (project.slug === input.slug) {
     return { projectId: input.projectId, slug: input.slug };
@@ -409,7 +394,7 @@ export async function archiveProject(
   input: ProjectIdInput,
 ): Promise<{ projectId: string }> {
   const db = getDb();
-  const project = await assertProjectManage(viewer, input.projectId);
+  const project = await assertProjectAdminister(viewer, input.projectId);
   const now = new Date();
 
   await db
@@ -436,7 +421,7 @@ export async function restoreProject(
   input: ProjectIdInput,
 ): Promise<{ projectId: string }> {
   const db = getDb();
-  const project = await assertProjectManage(viewer, input.projectId);
+  const project = await assertProjectAdminister(viewer, input.projectId);
   const now = new Date();
 
   await db
@@ -463,7 +448,7 @@ export async function deleteProject(
   input: ProjectIdInput,
 ): Promise<{ projectId: string }> {
   const db = getDb();
-  await assertProjectManage(viewer, input.projectId);
+  await assertProjectAdminister(viewer, input.projectId);
 
   // Child rows (tasks, requests, notes, members, …) cascade via ON DELETE.
   await db.delete(projects).where(eq(projects.id, input.projectId));
@@ -481,7 +466,7 @@ export async function setClientShare(
   clientBoardPath: string | null;
 }> {
   const db = getDb();
-  const project = await assertProjectManage(viewer, input.projectId);
+  const project = await assertProjectAdminister(viewer, input.projectId);
   const now = new Date();
 
   if (input.enabled) {
@@ -585,7 +570,7 @@ export async function rotateClientShareToken(
   input: ProjectIdInput,
 ): Promise<{ projectId: string; shareToken: string; clientBoardPath: string }> {
   const db = getDb();
-  const project = await assertProjectManage(viewer, input.projectId);
+  const project = await assertProjectAdminister(viewer, input.projectId);
   const now = new Date();
 
   // A fresh token immediately invalidates the previous link.
@@ -618,7 +603,7 @@ export async function duplicateProject(
   input: ProjectIdInput,
 ): Promise<{ projectId: string }> {
   const db = getDb();
-  const sourceProject = await assertProjectManage(viewer, input.projectId);
+  const sourceProject = await assertProjectAdminister(viewer, input.projectId);
 
   // Copy the project owner's rows (matches the web action, where the duplicator
   // is the owner). The new workspace is owned by whoever triggered the copy.

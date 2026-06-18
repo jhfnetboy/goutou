@@ -16,7 +16,7 @@ import type { Viewer } from "@/lib/auth-server";
 import { getDb } from "@/lib/db";
 import { projectStatusUpdates, tasks } from "@/lib/db/schema";
 import {
-  assertProjectOwner,
+  assertProjectManage,
   touchProject,
   touchTask,
 } from "@/lib/services/_shared";
@@ -70,7 +70,7 @@ export async function publishStatusUpdate(
   const db = getDb();
   const now = new Date();
   const task = await assertOwnedTask(viewer, input.taskId, input.projectId);
-  await assertProjectOwner(viewer, input.projectId);
+  await assertProjectManage(viewer, input.projectId);
 
   if (task.status !== "done") {
     throw new Error("Only completed tasks can be published as client updates.");
@@ -118,7 +118,7 @@ export async function deleteStatusUpdate(
   const db = getDb();
   const now = new Date();
   const task = await assertOwnedTask(viewer, input.taskId, input.projectId);
-  await assertProjectOwner(viewer, input.projectId);
+  await assertProjectManage(viewer, input.projectId);
 
   await db
     .delete(projectStatusUpdates)

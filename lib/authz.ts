@@ -8,11 +8,17 @@ import { getDb } from "@/lib/db";
 import {
   projectMembers,
   projects,
+  type ProjectMemberRole,
   type UserRole,
 } from "@/lib/db/schema";
 import { isAdminTier } from "@/lib/auth-server";
 
 type ViewerInput = { id: string; role: UserRole };
+
+// A viewer's effective role on one project. The Owner is the project creator
+// (projects.ownerId); Leader/Member come from project_members.role. Workspace
+// owners/admins are super-users and resolve to "owner" for capability checks.
+export type ProjectRole = "owner" | "leader" | "member";
 
 /**
  * Projects the user has a direct relationship with — they own it OR they're
@@ -71,6 +77,65 @@ export async function canAccessProject(
 }
 
 /**
+ * The viewer's effective role on a project, or null if they have no access.
+ * Workspace owner/admin → "owner" (super-user); the project creator → "owner";
+ * a project_members row → its stored role ("leader" | "member"); else null.
+ */
+export async function getProjectRole(
+  viewer: ViewerInput,
+  projectId: string,
+): Promise<ProjectRole | null> {
+  if (isAdminTier(viewer.role)) return "owner";
+
+  const db = getDb();
+  const [project] = await db
+    .select({ ownerId: projects.ownerId })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+  if (!project) return null;
+  if (project.ownerId === viewer.id) return "owner";
+
+  const [member] = await db
+    .select({ role: projectMembers.role })
+    .from(projectMembers)
+    .where(
+      and(
+        eq(projectMembers.projectId, projectId),
+        eq(projectMembers.userId, viewer.id),
+      ),
+    )
+    .limit(1);
+  return (member?.role as ProjectMemberRole | undefined) ?? null;
+}
+
+/**
+ * Leader-level authority: edit project details, manage labels/categories/notes,
+ * publish client updates, manage branches, convert requests, and add/remove
+ * Members. Owner OR Leader (OR workspace admin). NOT enough to delete/archive
+ * the project, manage the share link, change the project key, or set roles —
+ * those require canAdministerProject.
+ */
+export async function canManageProject(
+  viewer: ViewerInput,
+  projectId: string,
+): Promise<boolean> {
+  const role = await getProjectRole(viewer, projectId);
+  return role === "owner" || role === "leader";
+}
+
+/**
+ * Owner-level authority: the structural / destructive / role-granting actions
+ * a Leader can never do. Owner only (workspace admins included).
+ */
+export async function canAdministerProject(
+  viewer: ViewerInput,
+  projectId: string,
+): Promise<boolean> {
+  return (await getProjectRole(viewer, projectId)) === "owner";
+}
+
+/**
  * Returns the project IDs a viewer can see.
  * - Admin tier (owner/admin): every project.
  * - Member: only projects they're explicitly a member of.
@@ -119,31 +184,21 @@ export async function canEditProject(
   viewer: ViewerInput,
   projectId: string,
 ): Promise<boolean> {
-  // Phase 1: any project member can edit. Project-level lead role lands later.
-  return canViewProject(viewer, projectId);
+  // Project config edits are Leader-level (owner or leader).
+  return canManageProject(viewer, projectId);
 }
 
 /**
- * Authority to add/remove members on a specific project.
- * - Admin tier (owner/admin user role) → yes, on any project.
- * - The project owner (projects.ownerId) → yes on their project, even if
- *   their user role is just 'member'.
- * - Everyone else → no.
+ * Authority to add/remove members on a project — now Leader-level (owner or
+ * leader, plus workspace admins). The finer rules (only the Owner may grant or
+ * remove the Leader role; a Leader can only manage Members) live in the member
+ * service, which knows each target's role.
  */
 export async function canManageProjectMembers(
   viewer: ViewerInput,
   projectId: string,
 ): Promise<boolean> {
-  if (isAdminTier(viewer.role)) return true;
-
-  const db = getDb();
-  const [project] = await db
-    .select({ ownerId: projects.ownerId })
-    .from(projects)
-    .where(eq(projects.id, projectId))
-    .limit(1);
-
-  return project?.ownerId === viewer.id;
+  return canManageProject(viewer, projectId);
 }
 
 /**

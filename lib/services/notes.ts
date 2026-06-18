@@ -15,7 +15,7 @@ import type { Viewer } from "@/lib/auth-server";
 import { getDb } from "@/lib/db";
 import { projectNotes } from "@/lib/db/schema";
 import { normalizeRichTextInput, parseRichText, richTextToPlainText } from "@/lib/rich-text";
-import { assertProjectOwner, touchProject } from "@/lib/services/_shared";
+import { assertProjectManage, touchProject } from "@/lib/services/_shared";
 
 function notePreview(content: string): string {
   const text = richTextToPlainText(parseRichText(content)).trim();
@@ -40,7 +40,7 @@ export async function createProjectNote(
 ): Promise<{ projectId: string; noteId: string }> {
   const db = getDb();
   const now = new Date();
-  await assertProjectOwner(viewer, input.projectId);
+  await assertProjectManage(viewer, input.projectId);
 
   const noteId = crypto.randomUUID();
   const content = normalizeRichTextInput(input.content) ?? "";
@@ -82,7 +82,7 @@ export async function updateProjectNote(
 ): Promise<{ projectId: string; noteId: string }> {
   const db = getDb();
   const now = new Date();
-  await assertProjectOwner(viewer, input.projectId);
+  await assertProjectManage(viewer, input.projectId);
 
   const [existing] = await db
     .select({ id: projectNotes.id })
@@ -130,7 +130,7 @@ export async function deleteProjectNote(
 ): Promise<{ projectId: string; noteId: string }> {
   const db = getDb();
   const now = new Date();
-  await assertProjectOwner(viewer, input.projectId);
+  await assertProjectManage(viewer, input.projectId);
 
   const [existing] = await db
     .select({ content: projectNotes.content })

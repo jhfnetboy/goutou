@@ -23,7 +23,7 @@ import {
   requireViewer,
   type Viewer,
 } from "@/lib/auth-server";
-import { canAccessProject } from "@/lib/authz";
+import { canAccessProject, canManageProject } from "@/lib/authz";
 import {
   formatRequestCode,
   formatTaskCode,
@@ -1049,11 +1049,15 @@ export async function deleteRequestAction(formData: FormData) {
 }
 
 export async function convertRequestToTaskAction(formData: FormData) {
-  const session = await requireSession();
+  const viewer = await requireViewer();
   const payload = convertRequestSchema.parse(toPayload(formData));
   const db = getDb();
 
-  await assertProjectOwnership(payload.projectId, session.user.id);
+  // Converting a request into a task is Leader-level (owner or leader). Any
+  // manager can convert any request in the project, not just ones they created.
+  if (!(await canManageProject(viewer, payload.projectId))) {
+    throw new Error("Project not found.");
+  }
 
   const [request] = await db
     .select()
@@ -1062,7 +1066,6 @@ export async function convertRequestToTaskAction(formData: FormData) {
       and(
         eq(clientRequests.id, payload.requestId),
         eq(clientRequests.projectId, payload.projectId),
-        eq(clientRequests.ownerId, session.user.id),
       ),
     )
     .limit(1);
@@ -1071,13 +1074,14 @@ export async function convertRequestToTaskAction(formData: FormData) {
     throw new Error("Request not found.");
   }
 
+  // A request already converted on this project shouldn't spawn a second task,
+  // regardless of who created the first one.
   const [existingTask] = await db
     .select()
     .from(tasks)
     .where(
       and(
         eq(tasks.projectId, payload.projectId),
-        eq(tasks.ownerId, session.user.id),
         eq(tasks.requestId, request.id),
       ),
     )
@@ -1100,7 +1104,7 @@ export async function convertRequestToTaskAction(formData: FormData) {
       // Fresh id — do NOT reuse request.id, which would make a task's PK equal a
       // client_requests PK and break the global uniqueness of entity ids.
       id: crypto.randomUUID(),
-      ownerId: session.user.id,
+      ownerId: viewer.id,
       projectId: payload.projectId,
       branchId,
       requestId: request.id,
@@ -1128,7 +1132,7 @@ export async function convertRequestToTaskAction(formData: FormData) {
 
   await touchProject(payload.projectId, now);
   await logProjectActivity(db, {
-    ownerId: session.user.id,
+    ownerId: viewer.id,
     projectId: payload.projectId,
     entityType: "request",
     entityId: request.id,

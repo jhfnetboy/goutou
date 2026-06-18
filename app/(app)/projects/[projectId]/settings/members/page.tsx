@@ -3,7 +3,11 @@ import { notFound } from "next/navigation";
 
 import { MembersManager } from "@/components/projects/members-manager";
 import { requireViewer } from "@/lib/auth-server";
-import { canAccessProject, canManageProjectMembers } from "@/lib/authz";
+import {
+  canAccessProject,
+  canAdministerProject,
+  canManageProjectMembers,
+} from "@/lib/authz";
 import { getDb } from "@/lib/db";
 import { projectMembers, projects, user } from "@/lib/db/schema";
 
@@ -21,7 +25,10 @@ export default async function ProjectMembersPage({ params }: PageProps) {
     notFound();
   }
 
-  const canManage = await canManageProjectMembers(viewer, projectId);
+  const [canManage, canAdminister] = await Promise.all([
+    canManageProjectMembers(viewer, projectId),
+    canAdministerProject(viewer, projectId),
+  ]);
 
   const db = getDb();
   const [project] = await db
@@ -51,6 +58,7 @@ export default async function ProjectMembersPage({ params }: PageProps) {
         name: user.name,
         email: user.email,
         role: user.role,
+        projectRole: projectMembers.role,
         image: user.image,
         addedAt: projectMembers.createdAt,
       })
@@ -80,9 +88,11 @@ export default async function ProjectMembersPage({ params }: PageProps) {
           {project.name} — Members
         </h1>
         <p className="mt-1 max-w-prose text-[13px] leading-6 text-muted">
-          Members can view and work on this project. The owner is always
-          included. Add someone by their account email — they must have signed
-          up via invite first.
+          <strong className="text-foreground">Leaders</strong> run the project
+          (settings, labels, client updates, and adding members);{" "}
+          <strong className="text-foreground">Members</strong> do the task and
+          request work. The owner has full control. Add someone by their account
+          email — they must have signed up via invite first.
         </p>
       </div>
 
@@ -90,12 +100,14 @@ export default async function ProjectMembersPage({ params }: PageProps) {
         projectId={project.id}
         owner={owner}
         canManage={canManage}
+        canAdminister={canAdminister}
         members={members.map((m) => ({
           membershipId: m.membershipId,
           userId: m.userId,
           name: m.name,
           email: m.email,
           role: m.role,
+          projectRole: m.projectRole,
           image: m.image,
           addedAt: m.addedAt,
         }))}

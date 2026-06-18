@@ -11,10 +11,15 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { isAdminTier, type Viewer } from "@/lib/auth-server";
-import { canAccessProject, canManageProjectMembers } from "@/lib/authz";
+import {
+  canAccessProject,
+  canAdministerProject,
+  canManageProjectMembers,
+} from "@/lib/authz";
 import { getDb } from "@/lib/db";
 import {
   invitations,
+  projectMemberRoleValues,
   projectMembers,
   projects,
   user,
@@ -52,6 +57,12 @@ export const addProjectMemberInputSchema = z.object({
     .min(1)
     .optional()
     .describe("Id of an existing workspace user to add (alternative to email)."),
+  role: z
+    .enum(projectMemberRoleValues)
+    .default("member")
+    .describe(
+      "Project role: 'member' (does the work) or 'leader' (runs the project). Adding a leader requires the project owner.",
+    ),
 });
 export type AddProjectMemberInput = z.infer<typeof addProjectMemberInputSchema>;
 
@@ -61,6 +72,17 @@ export const removeProjectMemberInputSchema = z.object({
 });
 export type RemoveProjectMemberInput = z.infer<
   typeof removeProjectMemberInputSchema
+>;
+
+export const setProjectMemberRoleInputSchema = z.object({
+  projectId: z.string().min(1),
+  userId: z.string().min(1),
+  role: z
+    .enum(projectMemberRoleValues)
+    .describe("New project role for the member: 'leader' or 'member'."),
+});
+export type SetProjectMemberRoleInput = z.infer<
+  typeof setProjectMemberRoleInputSchema
 >;
 
 export const createInviteInputSchema = z.object({
@@ -84,6 +106,9 @@ type ProjectMemberRow = {
   name: string;
   email: string;
   role: string;
+  // Per-project role: the project owner is "owner"; members carry their stored
+  // "leader" / "member" role.
+  projectRole: "owner" | "leader" | "member";
   image: string | null;
   isOwner: boolean;
   addedAt: Date | null;
@@ -122,6 +147,7 @@ export async function listProjectMembers(
         name: user.name,
         email: user.email,
         role: user.role,
+        projectRole: projectMembers.role,
         image: user.image,
         addedAt: projectMembers.createdAt,
       })
@@ -138,6 +164,7 @@ export async function listProjectMembers(
       name: ownerRows[0].name,
       email: ownerRows[0].email,
       role: ownerRows[0].role,
+      projectRole: "owner",
       image: ownerRows[0].image,
       isOwner: true,
       addedAt: null,
@@ -152,6 +179,7 @@ export async function listProjectMembers(
       name: m.name,
       email: m.email,
       role: m.role,
+      projectRole: m.projectRole,
       image: m.image,
       isOwner: false,
       addedAt: m.addedAt,
@@ -171,6 +199,13 @@ export async function addProjectMember(
   }
   if (!(await canManageProjectMembers(viewer, input.projectId))) {
     throw new Error("You don't have permission to manage members on this project.");
+  }
+  // Adding someone as a Leader is Owner-only; Leaders can add Members only.
+  if (
+    input.role === "leader" &&
+    !(await canAdministerProject(viewer, input.projectId))
+  ) {
+    throw new Error("Only the project owner can add a Leader.");
   }
 
   const [project] = await db
@@ -221,6 +256,7 @@ export async function addProjectMember(
     id: crypto.randomUUID(),
     projectId: input.projectId,
     userId: target.id,
+    role: input.role,
     addedById: viewer.id,
     createdAt: new Date(),
   });
@@ -238,6 +274,24 @@ export async function removeProjectMember(
     throw new Error("You don't have permission to manage members on this project.");
   }
 
+  // Removing a Leader is Owner-only; a Leader can only remove Members.
+  const [target] = await db
+    .select({ role: projectMembers.role })
+    .from(projectMembers)
+    .where(
+      and(
+        eq(projectMembers.projectId, input.projectId),
+        eq(projectMembers.userId, input.userId),
+      ),
+    )
+    .limit(1);
+  if (
+    target?.role === "leader" &&
+    !(await canAdministerProject(viewer, input.projectId))
+  ) {
+    throw new Error("Only the project owner can remove a Leader.");
+  }
+
   await db
     .delete(projectMembers)
     .where(
@@ -248,6 +302,50 @@ export async function removeProjectMember(
     );
 
   return { projectId: input.projectId, userId: input.userId };
+}
+
+/**
+ * Change a member's project role (promote to Leader / demote to Member).
+ * Owner-only. The project owner isn't a membership row, so their role can't be
+ * changed here.
+ */
+export async function setProjectMemberRole(
+  viewer: Viewer,
+  input: SetProjectMemberRoleInput,
+): Promise<{ projectId: string; userId: string; role: string }> {
+  if (!(await canAdministerProject(viewer, input.projectId))) {
+    throw new Error("Only the project owner can change member roles.");
+  }
+  const db = getDb();
+
+  const [project] = await db
+    .select({ ownerId: projects.ownerId })
+    .from(projects)
+    .where(eq(projects.id, input.projectId))
+    .limit(1);
+  if (!project) throw new Error("Project not found.");
+  if (project.ownerId === input.userId) {
+    throw new Error("The project owner's role can't be changed.");
+  }
+
+  const [member] = await db
+    .select({ id: projectMembers.id })
+    .from(projectMembers)
+    .where(
+      and(
+        eq(projectMembers.projectId, input.projectId),
+        eq(projectMembers.userId, input.userId),
+      ),
+    )
+    .limit(1);
+  if (!member) throw new Error("That person isn't a member of this project.");
+
+  await db
+    .update(projectMembers)
+    .set({ role: input.role })
+    .where(eq(projectMembers.id, member.id));
+
+  return { projectId: input.projectId, userId: input.userId, role: input.role };
 }
 
 // --- Workspace invitations ---------------------------------------------------
