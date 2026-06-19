@@ -220,6 +220,9 @@ export type SpaceDetail = {
     status: string;
     color: string | null;
     archivedAt: Date | null;
+    // The whole space's project list is shown to any member, but a project is
+    // only openable (canAccess) by its owner/an invited member/an admin.
+    canAccess: boolean;
   }[];
 };
 
@@ -300,14 +303,13 @@ export async function getSpaceDetail(
   ]);
 
   const canManage = admin || space.leadId === viewer.id;
-  // Space membership grants no project access: a regular member sees only the
-  // projects they actually belong to (owned or invited). The lead/admin manage
-  // the space and see its full project list.
-  let visibleProjects = projectRows;
-  if (!canManage) {
-    const accessibleIds = new Set(await getPersonalProjectIds(viewer.id));
-    visibleProjects = projectRows.filter((p) => accessibleIds.has(p.id));
-  }
+  // The full project list is shown to everyone with space access, but space
+  // membership grants no project access: a regular member can only OPEN the
+  // projects they own or were invited to. Mark each row's openability so the UI
+  // can lock the rest. Owner/lead/admin can open everything.
+  const accessibleIds = canManage
+    ? null
+    : new Set(await getPersonalProjectIds(viewer.id));
 
   return {
     id: space.id,
@@ -317,7 +319,10 @@ export async function getSpaceDetail(
     leadName: space.leadName,
     canManage,
     members: memberRows.map((m) => ({ ...m, isLead: m.userId === space.leadId })),
-    projects: visibleProjects,
+    projects: projectRows.map((p) => ({
+      ...p,
+      canAccess: accessibleIds === null || accessibleIds.has(p.id),
+    })),
   };
 }
 

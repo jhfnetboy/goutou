@@ -6,6 +6,7 @@ import { useState, useTransition } from "react";
 import {
   ArrowSquareOut,
   Crown,
+  Lock,
   Trash,
   UserPlus,
 } from "@phosphor-icons/react";
@@ -29,6 +30,7 @@ type Project = {
   status: string;
   color: string | null;
   archivedAt: Date | null;
+  canAccess: boolean;
 };
 type Detail = {
   id: string;
@@ -81,24 +83,15 @@ export function SpaceDetailView({ detail }: { detail: Detail }) {
           Projects · {detail.projects.length}
         </p>
         <div className="mt-3 grid gap-2">
-          {detail.projects.map((p) => (
-            <Link
-              key={p.id}
-              href={`/projects/${p.id}`}
-              className={cn(
-                "group flex items-center gap-3 rounded-md border border-border px-3 py-2.5 transition hover:border-border-strong",
-                p.color ? null : "bg-surface hover:bg-surface-strong",
-              )}
-              style={
-                p.color
-                  ? {
-                      borderLeftWidth: 3,
-                      borderLeftColor: p.color,
-                      backgroundColor: `color-mix(in srgb, ${p.color} 8%, transparent)`,
-                    }
-                  : undefined
-              }
-            >
+          {detail.projects.map((p) => {
+            const colorStyle = p.color
+              ? {
+                  borderLeftWidth: 3,
+                  borderLeftColor: p.color,
+                  backgroundColor: `color-mix(in srgb, ${p.color} 8%, transparent)`,
+                }
+              : undefined;
+            const label = (
               <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
                 {p.name}
                 {p.archivedAt ? (
@@ -107,9 +100,45 @@ export function SpaceDetailView({ detail }: { detail: Detail }) {
                   </span>
                 ) : null}
               </span>
-              <ArrowSquareOut className="size-4 text-muted transition group-hover:text-foreground" />
-            </Link>
-          ))}
+            );
+
+            // Locked: shown in the list so members see what's in the space, but
+            // not openable until they're invited to the project.
+            if (!p.canAccess) {
+              return (
+                <div
+                  key={p.id}
+                  title="You're not a member of this project — ask the project owner or a lead to add you."
+                  className={cn(
+                    "flex cursor-default items-center gap-3 rounded-md border border-border px-3 py-2.5 opacity-60",
+                    p.color ? null : "bg-surface",
+                  )}
+                  style={colorStyle}
+                >
+                  {label}
+                  <span className="inline-flex shrink-0 items-center gap-1 font-mono text-[10px] uppercase tracking-[0.04em] text-muted">
+                    <Lock className="size-3.5" />
+                    No access
+                  </span>
+                </div>
+              );
+            }
+
+            return (
+              <Link
+                key={p.id}
+                href={`/projects/${p.id}`}
+                className={cn(
+                  "group flex items-center gap-3 rounded-md border border-border px-3 py-2.5 transition hover:border-border-strong",
+                  p.color ? null : "bg-surface hover:bg-surface-strong",
+                )}
+                style={colorStyle}
+              >
+                {label}
+                <ArrowSquareOut className="size-4 text-muted transition group-hover:text-foreground" />
+              </Link>
+            );
+          })}
           {detail.projects.length === 0 ? (
             <p className="py-6 text-center text-[13px] text-muted">
               No projects in this space yet.
