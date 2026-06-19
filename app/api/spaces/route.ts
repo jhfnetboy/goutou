@@ -82,9 +82,9 @@ export async function POST(request: Request) {
         });
         break;
     }
-    revalidatePath("/spaces");
-    revalidatePath("/admin/spaces");
-    if (body.op !== "create") revalidatePath(`/spaces/${body.spaceId}`);
+    revalidatePath("/team");
+    revalidatePath("/admin/team");
+    if (body.op !== "create") revalidatePath(`/team/${body.spaceId}`);
     return Response.json({ ok: true, spaceId });
   } catch (error) {
     return Response.json(

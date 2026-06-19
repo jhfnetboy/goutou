@@ -190,7 +190,7 @@ export function CreateProjectModal({
           <form action={createProjectAction} className="grid gap-4">
             {spaces.length > 1 ? (
               <label className="grid gap-2">
-                <span className="text-sm font-medium text-foreground">Space</span>
+                <span className="text-sm font-medium text-foreground">Team</span>
                 <select
                   name="spaceId"
                   defaultValue={
@@ -205,8 +205,8 @@ export function CreateProjectModal({
                   ))}
                 </select>
                 <p className="text-[13px] leading-6 text-muted">
-                  Personal is private to you; a company space shares the project
-                  with everyone in it.
+                  Personal keeps it private to you; a team files it under that
+                  team — invite people to the project to give them access.
                 </p>
               </label>
             ) : null}

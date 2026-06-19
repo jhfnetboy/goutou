@@ -5,7 +5,6 @@ import { usePathname, useSearchParams } from "next/navigation";
 import {
   ChatCircleText,
   ClockCounterClockwise,
-  GitBranch,
   Kanban,
   NotePencil,
   SlidersHorizontal,
@@ -23,7 +22,6 @@ const tabs = [
   { label: "Overview", icon: SquaresFour, suffix: "" },
   { label: "Requests", icon: ChatCircleText, suffix: "/requests" },
   { label: "Board", icon: Kanban, suffix: "/board" },
-  { label: "Branches", icon: GitBranch, suffix: "/branches" },
   { label: "Notes", icon: NotePencil, suffix: "/notes" },
   { label: "History", icon: ClockCounterClockwise, suffix: "/history" },
   { label: "Members", icon: UsersThree, suffix: "/settings/members" },

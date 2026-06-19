@@ -79,7 +79,7 @@ export async function resolveSpaceForCreate(
 ): Promise<string> {
   if (!spaceId) return ensurePersonalSpace(viewer.id);
   if (!(await canPostToSpace(viewer, spaceId))) {
-    throw new Error("You can't create a project in that space.");
+    throw new Error("You can't create a project in that team.");
   }
   return spaceId;
 }
@@ -329,7 +329,7 @@ export async function getSpaceDetail(
 // --- Input schemas -----------------------------------------------------------
 
 export const createSpaceInputSchema = z.object({
-  name: z.string().trim().min(1).max(80).describe("Company space name."),
+  name: z.string().trim().min(1).max(80).describe("Team name."),
 });
 export type CreateSpaceInput = z.infer<typeof createSpaceInputSchema>;
 
@@ -381,7 +381,7 @@ async function loadCompanySpace(spaceId: string) {
     .where(eq(spaces.id, spaceId))
     .limit(1);
   if (!space || space.kind !== "company") {
-    throw new Error("Space not found.");
+    throw new Error("Team not found.");
   }
   return space;
 }
@@ -409,7 +409,7 @@ export async function createSpace(
 ): Promise<{ spaceId: string; name: string }> {
   // Creating a (company) space is a workspace-admin action.
   if (!isAdminTier(viewer.role)) {
-    throw new Error("Only workspace owners and admins can create a company space.");
+    throw new Error("Only workspace owners and admins can create a team.");
   }
   const db = getDb();
   const id = crypto.randomUUID();
@@ -443,7 +443,7 @@ export async function renameSpace(
   input: RenameSpaceInput,
 ): Promise<{ spaceId: string; name: string }> {
   if (!(await canManageSpace(viewer, input.spaceId))) {
-    throw new Error("You can't manage that space.");
+    throw new Error("You can't manage that team.");
   }
   const space = await loadCompanySpace(input.spaceId);
   const db = getDb();
@@ -459,7 +459,7 @@ export async function deleteSpace(
   input: DeleteSpaceInput,
 ): Promise<{ spaceId: string }> {
   if (!(await canManageSpace(viewer, input.spaceId))) {
-    throw new Error("You can't manage that space.");
+    throw new Error("You can't manage that team.");
   }
   const space = await loadCompanySpace(input.spaceId);
   const db = getDb();
@@ -484,7 +484,7 @@ export async function addSpaceMember(
   input: AddSpaceMemberInput,
 ): Promise<{ spaceId: string; userId: string; added: boolean }> {
   if (!(await canManageSpace(viewer, input.spaceId))) {
-    throw new Error("You can't manage that space.");
+    throw new Error("You can't manage that team.");
   }
   await loadCompanySpace(input.spaceId);
   const userId = await resolveWorkspaceUser(input);
@@ -517,13 +517,13 @@ export async function removeSpaceMember(
   input: RemoveSpaceMemberInput,
 ): Promise<{ spaceId: string; userId: string }> {
   if (!(await canManageSpace(viewer, input.spaceId))) {
-    throw new Error("You can't manage that space.");
+    throw new Error("You can't manage that team.");
   }
   const space = await loadCompanySpace(input.spaceId);
   const db = getDb();
   // Removing the current lead would orphan the space; require reassigning first.
   if (space.leadId === input.userId) {
-    throw new Error("Reassign the Space Lead before removing them.");
+    throw new Error("Reassign the team lead before removing them.");
   }
   await db
     .delete(spaceMembers)
@@ -541,7 +541,7 @@ export async function setSpaceLead(
   input: SetSpaceLeadInput,
 ): Promise<{ spaceId: string; userId: string }> {
   if (!(await canManageSpace(viewer, input.spaceId))) {
-    throw new Error("You can't manage that space.");
+    throw new Error("You can't manage that team.");
   }
   const space = await loadCompanySpace(input.spaceId);
   const db = getDb();
@@ -590,7 +590,7 @@ export async function moveProjectToSpace(
     throw new Error("Project not found.");
   }
   if (!(await canPostToSpace(viewer, input.spaceId))) {
-    throw new Error("You can't move the project into that space.");
+    throw new Error("You can't move the project into that team.");
   }
   const [target] = await db
     .select({ id: spaces.id, name: spaces.name })

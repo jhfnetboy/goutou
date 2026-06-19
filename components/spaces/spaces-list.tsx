@@ -48,10 +48,10 @@ export function SpacesList({
         error?: string;
       };
       if (!res.ok || !data.ok) {
-        toast(data.error ?? "Could not create the space.", "danger");
+        toast(data.error ?? "Could not create the team.", "danger");
         return;
       }
-      toast("Company space created", "success");
+      toast("Team created", "success");
       setName("");
       router.refresh();
     });
@@ -62,11 +62,11 @@ export function SpacesList({
       {canCreate ? (
         <div className="ui-panel-soft p-5">
           <p className="font-mono text-[11px] uppercase tracking-[0.04em] text-muted">
-            Create company space
+            Create team
           </p>
           <p className="mt-1 text-[12px] leading-5 text-muted">
-            Name it after the company or team. You become its lead — open it to
-            add members and grant access to its projects.
+            Name it after the team or company. You become its lead — open it to
+            add members and create projects in it.
           </p>
           <div className="mt-3 flex flex-wrap gap-3">
             <input
@@ -98,7 +98,7 @@ export function SpacesList({
           {spaces.map((space) => (
             <Link
               key={space.id}
-              href={`/spaces/${space.id}`}
+              href={`/team/${space.id}`}
               className="group flex items-center gap-3 rounded-md border border-border bg-surface px-4 py-3 transition hover:border-border-strong hover:bg-surface-strong"
             >
               <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted">
@@ -130,12 +130,12 @@ export function SpacesList({
             <Buildings className="size-5" />
           </div>
           <p className="mt-3 text-[13px] font-medium text-foreground">
-            No company spaces yet
+            No teams yet
           </p>
           <p className="mx-auto mt-1 max-w-sm text-[13px] leading-6 text-muted">
             {canCreate
-              ? "Create one above to group projects and share them with a team."
-              : "You're not a member of any company space yet."}
+              ? "Create one above to group projects under a team."
+              : "You're not a member of any team yet."}
           </p>
         </div>
       )}

@@ -268,10 +268,10 @@ export function ProjectIndexList({ projects, view, initialSpace }: Props) {
             <select
               value={effectiveSpace}
               onChange={(event) => handleSpaceChange(event.target.value)}
-              aria-label="Filter by space"
+              aria-label="Filter by team"
               className="ui-select"
             >
-              <option value="all">All spaces</option>
+              <option value="all">All teams</option>
               {spaceOptions.map((option) => (
                 <option key={option.key} value={option.key}>
                   {option.label}

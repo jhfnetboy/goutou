@@ -141,7 +141,7 @@ export function SpaceDetailView({ detail }: { detail: Detail }) {
           })}
           {detail.projects.length === 0 ? (
             <p className="py-6 text-center text-[13px] text-muted">
-              No projects in this space yet.
+              No projects in this team yet.
             </p>
           ) : null}
         </div>
@@ -259,7 +259,7 @@ export function SpaceDetailView({ detail }: { detail: Detail }) {
               className="ui-button-danger"
             >
               <Trash className="size-4" />
-              Delete space
+              Delete team
             </button>
           </div>
         ) : null}
@@ -270,16 +270,16 @@ export function SpaceDetailView({ detail }: { detail: Detail }) {
         title={`Delete "${detail.name}"?`}
         description={
           detail.projects.length > 0
-            ? `This space still has ${detail.projects.length} project${detail.projects.length === 1 ? "" : "s"} — move them out first; deletion will be refused.`
-            : "This removes the company space and its membership. Cannot be undone."
+            ? `This team still has ${detail.projects.length} project${detail.projects.length === 1 ? "" : "s"} — move them out first; deletion will be refused.`
+            : "This removes the team and its membership. Cannot be undone."
         }
-        confirmLabel="Delete space"
+        confirmLabel="Delete team"
         variant="danger"
         isPending={isPending}
         onConfirm={() =>
-          call({ op: "delete", spaceId: detail.id }, "Space deleted", () => {
+          call({ op: "delete", spaceId: detail.id }, "Team deleted", () => {
             setConfirmDelete(false);
-            router.push("/spaces");
+            router.push("/team");
           })
         }
         onCancel={() => setConfirmDelete(false)}

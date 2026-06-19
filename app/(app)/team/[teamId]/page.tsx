@@ -8,29 +8,29 @@ import { SpaceDetailView } from "@/components/spaces/space-detail-view";
 
 export const dynamic = "force-dynamic";
 
-type Props = { params: Promise<{ spaceId: string }> };
+type Props = { params: Promise<{ teamId: string }> };
 
-export default async function SpaceDetailPage({ params }: Props) {
+export default async function TeamDetailPage({ params }: Props) {
   const viewer = await requireViewer();
-  const { spaceId } = await params;
-  const detail = await getSpaceDetail(viewer, spaceId);
+  const { teamId } = await params;
+  const detail = await getSpaceDetail(viewer, teamId);
   if (!detail) notFound();
 
   return (
     <div className="grid gap-6">
       <PageHeader
-        eyebrow={detail.kind === "company" ? "Company space" : "Personal space"}
+        eyebrow={detail.kind === "company" ? "Team" : "Personal"}
         title={detail.name}
         description={
           detail.kind === "company"
             ? detail.leadName
-              ? `Led by ${detail.leadName} · members get access to every project here.`
+              ? `Led by ${detail.leadName} · members open the projects they're invited to.`
               : "No lead assigned."
             : "Private to you."
         }
         action={
-          <Link href="/spaces" className="ui-button-secondary">
-            All spaces
+          <Link href="/team" className="ui-button-secondary">
+            All teams
           </Link>
         }
       />

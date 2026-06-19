@@ -5,9 +5,9 @@ import { SpacesList } from "@/components/spaces/spaces-list";
 
 export const dynamic = "force-dynamic";
 
-// Workspace "Spaces": the company spaces the viewer belongs to. Personal is not
+// Workspace "Teams": the company teams the viewer belongs to. Personal is not
 // listed. Each opens to its detail (members + projects).
-export default async function SpacesPage() {
+export default async function TeamsPage() {
   const viewer = await requireViewer();
   const spaces = (await listSpaces(viewer))
     .filter((s) => s.kind === "company")
@@ -22,9 +22,9 @@ export default async function SpacesPage() {
   return (
     <div className="grid gap-6">
       <PageHeader
-        eyebrow="Workspace · Spaces"
-        title="Spaces"
-        description="Company spaces you belong to. Open one to see its members and projects."
+        eyebrow="Workspace · Teams"
+        title="Teams"
+        description="Teams you belong to. Open one to see its members and projects."
       />
       <section className="ui-panel p-5 sm:p-6">
         <SpacesList spaces={spaces} canCreate={false} />

@@ -447,16 +447,16 @@ export function AppSidebar({
 
               <NavSection label="Workspace" />
               <NavItem
+                href="/admin/team"
+                icon={Buildings}
+                label="Teams"
+                active={pathname.startsWith("/admin/team")}
+              />
+              <NavItem
                 href="/admin/projects"
                 icon={Folders}
                 label="Projects"
                 active={pathname.startsWith("/admin/projects")}
-              />
-              <NavItem
-                href="/admin/spaces"
-                icon={Buildings}
-                label="Spaces"
-                active={pathname.startsWith("/admin/spaces")}
               />
 
               <NavSection label="System" />
@@ -497,16 +497,16 @@ export function AppSidebar({
 
               <NavSection label="Workspace" />
               <NavItem
+                href="/team"
+                icon={Buildings}
+                label="Teams"
+                active={pathname === "/team" || pathname.startsWith("/team/")}
+              />
+              <NavItem
                 href="/projects"
                 icon={Folders}
                 label="Projects"
                 active={pathname === "/projects"}
-              />
-              <NavItem
-                href="/spaces"
-                icon={Buildings}
-                label="Spaces"
-                active={pathname === "/spaces" || pathname.startsWith("/spaces/")}
               />
             </>
           )}
