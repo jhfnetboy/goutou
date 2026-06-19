@@ -30,6 +30,11 @@ const updateSchema = z.object({
   logoLightKey: brandingKey,
   faviconKey: brandingKey,
   sidebarMarkKey: brandingKey,
+  // Link-preview (Open Graph) card. Blank title/description fall back to the
+  // seeder-web defaults; the image is a branding/ key like the logos.
+  previewTitle: z.string().trim().max(120).optional(),
+  previewDescription: z.string().trim().max(300).optional(),
+  previewImageKey: brandingKey,
 });
 
 export async function PATCH(request: Request) {
@@ -51,6 +56,13 @@ export async function PATCH(request: Request) {
     logoLightKey: payload.logoLightKey ?? null,
     faviconKey: payload.faviconKey ?? null,
     sidebarMarkKey: payload.sidebarMarkKey ?? null,
+    // Blank title/description → null, so generateMetadata falls back to the
+    // seeder-web preview defaults rather than persisting an empty card.
+    previewTitle: payload.previewTitle ? payload.previewTitle : null,
+    previewDescription: payload.previewDescription
+      ? payload.previewDescription
+      : null,
+    previewImageKey: payload.previewImageKey ?? null,
   };
 
   await updateSystemSettings(next);
@@ -66,6 +78,7 @@ export async function PATCH(request: Request) {
           [previous.logoLightKey, next.logoLightKey],
           [previous.faviconKey, next.faviconKey],
           [previous.sidebarMarkKey, next.sidebarMarkKey],
+          [previous.previewImageKey, next.previewImageKey],
         ] as const
       )
         .filter(([oldKey, newKey]) => oldKey && oldKey !== newKey)

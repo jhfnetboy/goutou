@@ -1,7 +1,11 @@
 import { SystemSettingsForm } from "@/components/admin/system/system-settings-form";
 import { PageHeader } from "@/components/app/page-header";
 import { requireRole } from "@/lib/auth-server";
-import { brandingUrl, getSystemSettings } from "@/lib/system-settings";
+import {
+  brandingUrl,
+  getSystemSettings,
+  PREVIEW_DEFAULTS,
+} from "@/lib/system-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +33,14 @@ export default async function AdminSystemPage() {
         logoLightUrl={brandingUrl(settings.logoLightKey, settings.updatedAt)}
         faviconUrl={brandingUrl(settings.faviconKey, settings.updatedAt)}
         sidebarMarkUrl={brandingUrl(settings.sidebarMarkKey, settings.updatedAt)}
+        previewTitle={settings.previewTitle ?? ""}
+        previewDescription={settings.previewDescription ?? ""}
+        previewImageKey={settings.previewImageKey}
+        previewImageUrl={
+          brandingUrl(settings.previewImageKey, settings.updatedAt) ??
+          PREVIEW_DEFAULTS.image
+        }
+        previewDefaults={PREVIEW_DEFAULTS}
       />
     </div>
   );

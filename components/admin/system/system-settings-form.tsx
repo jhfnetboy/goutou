@@ -20,9 +20,19 @@ type SystemSettingsFormProps = {
   logoLightUrl: string | null;
   faviconUrl: string | null;
   sidebarMarkUrl: string | null;
+  previewTitle: string;
+  previewDescription: string;
+  previewImageKey: string | null;
+  previewImageUrl: string | null;
+  previewDefaults: { title: string; description: string; image: string };
 };
 
-type BrandingKind = "logo-dark" | "logo-light" | "favicon" | "sidebar-mark";
+type BrandingKind =
+  | "logo-dark"
+  | "logo-light"
+  | "favicon"
+  | "sidebar-mark"
+  | "preview-image";
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 const ACCEPT = "image/png,image/jpeg,image/webp";
@@ -59,6 +69,11 @@ export function SystemSettingsForm({
   logoLightUrl,
   faviconUrl,
   sidebarMarkUrl,
+  previewTitle: initialPreviewTitle,
+  previewDescription: initialPreviewDescription,
+  previewImageKey: initialPreviewImageKey,
+  previewImageUrl,
+  previewDefaults,
 }: SystemSettingsFormProps) {
   const router = useRouter();
 
@@ -76,8 +91,17 @@ export function SystemSettingsForm({
   const [faviconPreview, setFaviconPreview] = useState(faviconUrl);
   const [sidebarMarkPreview, setSidebarMarkPreview] = useState(sidebarMarkUrl);
 
+  const [previewTitle, setPreviewTitle] = useState(initialPreviewTitle);
+  const [previewDescription, setPreviewDescription] = useState(
+    initialPreviewDescription,
+  );
+  const [previewImageKey, setPreviewImageKey] = useState(initialPreviewImageKey);
+  const [previewImagePreview, setPreviewImagePreview] =
+    useState(previewImageUrl);
+
   const [uploading, setUploading] = useState<BrandingKind | null>(null);
   const [saving, setSaving] = useState(false);
+  const previewImageRef = useRef<HTMLInputElement>(null);
 
   const accentValid = HEX_RE.test(accent);
   const accentSafe = accentValid ? accent : DEFAULT_ACCENT;
@@ -91,6 +115,7 @@ export function SystemSettingsForm({
     "logo-light": [setLogoLightKey, setLogoLightPreview],
     favicon: [setFaviconKey, setFaviconPreview],
     "sidebar-mark": [setSidebarMarkKey, setSidebarMarkPreview],
+    "preview-image": [setPreviewImageKey, setPreviewImagePreview],
   };
 
   async function handleFile(kind: BrandingKind, file: File) {
@@ -133,6 +158,9 @@ export function SystemSettingsForm({
           logoLightKey: logoLightKey ?? "",
           faviconKey: faviconKey ?? "",
           sidebarMarkKey: sidebarMarkKey ?? "",
+          previewTitle: previewTitle.trim(),
+          previewDescription: previewDescription.trim(),
+          previewImageKey: previewImageKey ?? "",
         }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -380,6 +408,123 @@ export function SystemSettingsForm({
           onClear={() => clearAsset("favicon")}
           cleared={!faviconKey}
         />
+      </section>
+
+      {/* Web preview (Open Graph / link card) */}
+      <section className="ui-panel p-5 sm:p-6">
+        <header className="mb-4">
+          <p className="font-mono text-[11px] font-medium uppercase tracking-[0.04em] text-muted">
+            Sharing
+          </p>
+          <h2 className="mt-2 text-[17px] font-medium tracking-[-0.022em] text-foreground">
+            Web preview
+          </h2>
+          <p className="mt-1 text-[13px] leading-6 text-muted">
+            The card shown when a link to your app is shared on Slack, X,
+            Discord, or iMessage. Leave a field empty to use the bundled Seeder
+            default.
+          </p>
+        </header>
+
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
+          <div className="grid content-start gap-4">
+            <label className="grid gap-1.5">
+              <span className="text-[13px] font-medium text-foreground">
+                Preview title
+              </span>
+              <input
+                className="ui-input"
+                value={previewTitle}
+                maxLength={120}
+                onChange={(e) => setPreviewTitle(e.target.value)}
+                placeholder={previewDefaults.title}
+              />
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-[13px] font-medium text-foreground">
+                Preview description
+              </span>
+              <textarea
+                className="ui-input min-h-20 resize-y py-2"
+                value={previewDescription}
+                maxLength={300}
+                onChange={(e) => setPreviewDescription(e.target.value)}
+                placeholder={previewDefaults.description}
+              />
+            </label>
+            <div className="grid gap-2">
+              <span className="text-[13px] font-medium text-foreground">
+                Preview image
+              </span>
+              <p className="text-[12px] leading-5 text-muted">
+                A 1200×630 card image. PNG, JPEG, or WebP up to 5 MB. Leave empty
+                for the bundled default.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => previewImageRef.current?.click()}
+                  className="ui-button-secondary px-3 disabled:opacity-60"
+                >
+                  {uploading === "preview-image" ? (
+                    <CircleNotch className="size-4 animate-spin" />
+                  ) : (
+                    <UploadSimple className="size-4" />
+                  )}
+                  {uploading === "preview-image" ? "Uploading…" : "Upload image"}
+                </button>
+                {previewImageKey ? (
+                  <button
+                    type="button"
+                    onClick={() => clearAsset("preview-image")}
+                    className="ui-button-ghost px-2 text-[12px]"
+                  >
+                    Use default
+                  </button>
+                ) : null}
+                <input
+                  ref={previewImageRef}
+                  type="file"
+                  accept={ACCEPT}
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleFile("preview-image", file);
+                    if (previewImageRef.current)
+                      previewImageRef.current.value = "";
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Live link-preview card */}
+          <div className="grid gap-2">
+            <p className="font-mono text-[11px] uppercase tracking-[0.04em] text-muted">
+              Preview
+            </p>
+            <div className="overflow-hidden rounded-md border border-border bg-surface">
+              <div className="border-l-2 border-l-emerald p-4">
+                <p className="text-[12px] text-muted">{systemName || "Seeder"}</p>
+                <p className="mt-1 text-[15px] font-semibold leading-snug text-accent">
+                  {previewTitle.trim() || previewDefaults.title}
+                </p>
+                <p className="mt-1.5 line-clamp-3 text-[13px] leading-6 text-foreground">
+                  {previewDescription.trim() || previewDefaults.description}
+                </p>
+                <div className="mt-3 overflow-hidden rounded-md border border-border bg-background">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={previewImagePreview ?? previewDefaults.image}
+                    alt="Link preview"
+                    className="aspect-[1200/630] w-full object-cover"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* Save */}

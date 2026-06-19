@@ -5,6 +5,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, IBM_Plex_Mono } from "next/font/google";
 import { BuildRefreshGuard } from "@/components/app/build-refresh-guard";
 import {
+  PREVIEW_DEFAULTS,
   SYSTEM_DESCRIPTION,
   brandingUrl,
   getSystemSettings,
@@ -41,8 +42,14 @@ export async function generateMetadata(): Promise<Metadata> {
         ],
         apple: "/seeder-icon-192.png",
       };
+  // Link-preview (Open Graph) card: admin overrides, else the seeder-web
+  // defaults. The image is an uploaded 1200×630 card, else the bundled default.
+  const previewTitle = settings.previewTitle || PREVIEW_DEFAULTS.title;
+  const previewDescription =
+    settings.previewDescription || PREVIEW_DEFAULTS.description;
   const ogImage =
-    brandingUrl(settings.logoDarkKey, settings.updatedAt) ?? "/dark-logo.png";
+    brandingUrl(settings.previewImageKey, settings.updatedAt) ??
+    PREVIEW_DEFAULTS.image;
   const appUrl = process.env.BETTER_AUTH_URL;
   return {
     ...(appUrl ? { metadataBase: new URL(appUrl) } : {}),
@@ -61,14 +68,14 @@ export async function generateMetadata(): Promise<Metadata> {
     openGraph: {
       type: "website",
       siteName: settings.systemName,
-      title: settings.webTitle,
-      description: SYSTEM_DESCRIPTION,
-      images: [{ url: ogImage }],
+      title: previewTitle,
+      description: previewDescription,
+      images: [{ url: ogImage, width: 1200, height: 630 }],
     },
     twitter: {
-      card: "summary",
-      title: settings.webTitle,
-      description: SYSTEM_DESCRIPTION,
+      card: "summary_large_image",
+      title: previewTitle,
+      description: previewDescription,
       images: [ogImage],
     },
   };

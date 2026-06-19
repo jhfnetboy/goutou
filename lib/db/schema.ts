@@ -1011,6 +1011,11 @@ export const systemSettings = sqliteTable("system_settings", {
   logoLightKey: text("logo_light_key"),
   faviconKey: text("favicon_key"),
   sidebarMarkKey: text("sidebar_mark_key"),
+  // Open Graph / link-preview card customization. Null → fall back to the
+  // bundled seeder-web defaults (PREVIEW_DEFAULTS in lib/system-settings).
+  previewTitle: text("preview_title"),
+  previewDescription: text("preview_description"),
+  previewImageKey: text("preview_image_key"),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" })
     .notNull()
     .default(sql`(unixepoch() * 1000)`),

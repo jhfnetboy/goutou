@@ -23,6 +23,7 @@ const ALLOWED_KINDS = new Set([
   "logo-light",
   "favicon",
   "sidebar-mark",
+  "preview-image",
 ]);
 
 // Admin-only upload for system branding. Mirrors app/api/uploads/image but gates

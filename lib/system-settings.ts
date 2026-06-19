@@ -9,6 +9,16 @@ import { systemSettings, type SystemSettings } from "@/lib/db/schema";
 export const SYSTEM_DESCRIPTION =
   "A foundational project manager for small teams — projects, client requests, and kanban execution.";
 
+// Default link-preview (Open Graph) card — the seeder-web values (seederpm.xyz).
+// Used whenever the admin hasn't overridden a preview field. The image ships in
+// public/og so a self-hosted install works offline, no external fetch.
+export const PREVIEW_DEFAULTS = {
+  title: "Seeder — Your Personal Project Manager",
+  description:
+    "A foundational, open-source project manager for small teams. Simple to run, self-hostable on Cloudflare or a VM, and yours to fork.",
+  image: "/og/seeder-og.png",
+};
+
 // Hard fallback used when the row/table is missing OR the D1 read throws. Mirrors
 // the migration seed so behaviour is identical pre- and post-seed. updatedAt = 0
 // so the cache-busting `?v=` is stable until a real save bumps it.
@@ -21,6 +31,9 @@ export const SYSTEM_SETTINGS_DEFAULTS: SystemSettings = {
   logoLightKey: null,
   faviconKey: null,
   sidebarMarkKey: null,
+  previewTitle: null,
+  previewDescription: null,
+  previewImageKey: null,
   updatedAt: new Date(0),
 };
 
