@@ -38,7 +38,7 @@ basename "$(pwd)"
 
 - `.goutou.json` 有 `repoId` → 直接用
 - 否则用 git remote 提取的仓库名（如 `sdk`、`contract`）
-- 记录为 `REPO_ID`
+- 记录为 `REPO_ID`，**统一转为小写**（`list-tasks labelName` 做精确大小写匹配；`repo:SDK` 无法命中存储为 `repo:sdk` 的标签）
 
 同时读取 `.goutou.json` 中的 `coordProjectId`（若有）。
 
