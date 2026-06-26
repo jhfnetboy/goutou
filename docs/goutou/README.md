@@ -89,7 +89,7 @@ cp .goutou.example.json .goutou.json
 }
 ```
 
-> `.goutou.json` 已加入 `.gitignore`（含 PAT 信息，不提交）。
+> `.goutou.json` 已加入 `.gitignore`（含项目 ID 信息，不提交）。PAT 存在 `~/.claude.json`，与代码仓库隔离。
 
 ### 6. 配置各子仓库（工兵端）
 
@@ -101,7 +101,7 @@ cp .goutou.example.json .goutou.json
 
 **选项 B：子仓库独立配置（适用于不同 Seeder 实例）**
 
-在子仓库根目录编辑 `.claude/settings.json`：
+在子仓库根目录创建 `.mcp.json`（Claude Code 的项目级 MCP 配置文件）：
 ```json
 {
   "mcpServers": {
@@ -115,6 +115,8 @@ cp .goutou.example.json .goutou.json
   }
 }
 ```
+
+> **安全注意**：`.mcp.json` 可能被提交到 git。如果文件里含 PAT（Bearer token），请将其加入 `.gitignore`，或将含 PAT 的配置改放 `~/.claude.json`（全局，已自动 gitignore）；`.mcp.json` 只保留不含认证信息的连接配置，由 claude.json 覆盖 headers。
 
 在子仓库根目录创建 `.goutou.json`（可选，自动检测也行）：
 ```json
@@ -200,8 +202,8 @@ cp .goutou.example.json .goutou.json
 **Q：工兵找不到任务**
 
 检查：
-1. 任务评论里有没有 `repos: <repoId> ...` 这行（军师分工评论必须包含）
-2. 工兵检测到的 REPO_ID 是否与任务中的 `repo:xxx` 标签匹配（`/goutou` 执行时会输出检测到的 REPO_ID）
+1. 任务 **description**（描述字段）里是否含 `repo:<repoId>`（如 `repo:sdk`）——Seeder search 只索引标题和描述，不索引评论，路由标记必须在描述里
+2. 工兵检测到的 REPO_ID 是否与任务描述中的 `repo:xxx` token 精确匹配（`/goutou` 执行时会输出检测到的 REPO_ID）
 3. 协同任务的项目 ID 配置是否正确
 
 **Q：重复回复**

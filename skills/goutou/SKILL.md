@@ -59,6 +59,8 @@ query = "repo:<REPO_ID>"
 
 从结果中筛选出 `type = "task"` 且 `projectId = coordProjectId` 的 hit。
 
+> **精确匹配陷阱**：`search` 做子字符串匹配，`repo:app` 会误命中描述含 `repo:app2` 的任务。在 Step 3 的 `read-task` 后，额外检查 task description 中是否含精确 token `repo:<REPO_ID>`（以空格或行尾分隔，如 `repo:sdk ` 或行末 `repo:sdk`），不满足则跳过。
+
 若无结果 → 输出：「本仓库（<REPO_ID>）暂无待处理的协同任务。」结束。
 
 ### Step 3：逐个读取任务详情，判断是否需要响应
@@ -67,9 +69,11 @@ query = "repo:<REPO_ID>"
 - `read-task`（projectId = coordProjectId，taskId = hit.id）→ 获取状态和描述
 - `list-task-comments`（projectId = coordProjectId，taskId = hit.id）→ 获取评论列表
 
-**跳过条件**（满足任一则跳过此任务）：
+**跳过条件**（满足任一则跳过此任务，不发任何评论）：
 1. `isTerminal = true`（任务已完结）
 2. 评论列表中已存在包含 `[repo:<REPO_ID>] 工兵回复` 的评论（避免重复响应）
+3. 评论列表中**不存在**含 `## 各仓库分工` 的军师分工评论（军师分工尚未写入——task 仍在初始化中，此时响应会永久阻塞后续正确处理；下次轮询再检查）
+4. 军师分工评论中**不含** `### repo:<REPO_ID>` 段落（此任务未分配给本仓库）
 
 **待响应任务**：所有未被跳过的任务及其评论列表，记录到待响应列表。
 
@@ -79,7 +83,7 @@ query = "repo:<REPO_ID>"
 
 **Step 4a：理解分工**
 
-在 Step 3 已获取的评论列表中，找到军师的首条分工评论（通常包含 `## 各仓库分工` 标题），提取 `### repo:<REPO_ID>` 段落下的分工说明。
+在 Step 3 已获取的评论列表中，找到军师的分工评论（含 `## 各仓库分工` 标题），提取 `### repo:<REPO_ID>` 段落下的分工说明。（此评论存在且含本仓库段落已由 Step 3 条件 3/4 保证，无需再次判空。）
 
 **Step 4b：结合本仓库代码上下文分析**
 
@@ -90,7 +94,7 @@ query = "repo:<REPO_ID>"
 
 **Step 4c：发布工兵回复**
 
-调用 `add-task-comment`，内容格式：
+调用 `add-task-comment`（projectId = coordProjectId，taskId = 当前任务 id），内容格式：
 
 ```markdown
 [repo:<REPO_ID>] 工兵回复

@@ -38,8 +38,9 @@ cat .goutou.json 2>/dev/null || echo "{}"
 在返回的项目列表中查找名称含以下关键词的项目（不区分大小写）：
 `协同`、`coord`、`goutou`、`军师`、`hub`
 
-- 找到 → 记录 `coordProjectId`
-- 未找到 → 告知用户：「请先在 Seeder 里创建一个协同中枢项目，然后在 .goutou.json 里设置 coordProjectId，或将项目命名为包含"协同/coord/goutou"。」停止执行。
+- **找到 1 个** → 记录 `coordProjectId`
+- **找到多个** → 列出所有匹配项目，请用户确认用哪个，或在 `.goutou.json` 中设置 `coordProjectId` 精确锁定，停止执行
+- **未找到** → 告知用户：「请先在 Seeder 里创建一个协同中枢项目，然后在 .goutou.json 里设置 coordProjectId，或将项目命名为包含"协同/coord/goutou"。」停止执行
 
 ### Step 2：分析诉求，拆解仓库分工
 
@@ -81,12 +82,12 @@ description = "repo:<仓库1> repo:<仓库2> repo:<仓库3>"
 2. 检查是否已有名为 `repo:<仓库ID>` 的标签（精确匹配）
 3. 若无 → 调用 `create-task-label`：
    - `name` = `repo:<仓库ID>`
-   - `color` = 按下表分配（固定颜色，方便视觉识别）：
-     - `repo:contract` → `#e74c3c`（红）
-     - `repo:kms`      → `#9b59b6`（紫）
-     - `repo:dvt`      → `#2980b9`（蓝）
-     - `repo:sdk`      → `#27ae60`（绿）
-     - 其他            → `#f39c12`（橙）
+   - `color` = 按下表分配（必须精确匹配 Seeder 的 24 色 palette，否则 Zod 校验失败）：
+     - `repo:contract` → `#eb5757`（Red）
+     - `repo:kms`      → `#8b5cf6`（Amethyst）
+     - `repo:dvt`      → `#5e6ad2`（Aether）
+     - `repo:sdk`      → `#27a644`（Emerald）
+     - 其他            → `#ef8b3a`（Orange）
 
 可并行处理多个仓库的标签检查+创建。
 
@@ -94,13 +95,14 @@ description = "repo:<仓库1> repo:<仓库2> repo:<仓库3>"
 
 调用 `add-task-label`：
 ```
-taskIds  = [taskId]
-labelIds = [所有涉及仓库对应的 labelId]
+projectId = coordProjectId
+taskIds   = [taskId]
+labelIds  = [所有涉及仓库对应的 labelId]
 ```
 
 ### Step 6：写首条分工评论
 
-调用 `add-task-comment`（taskId = Step 3 的 taskId），内容如下：
+调用 `add-task-comment`（projectId = coordProjectId，taskId = Step 3 的 taskId），内容如下：
 
 ```markdown
 ## 需求背景
