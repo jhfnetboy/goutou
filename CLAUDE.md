@@ -31,6 +31,12 @@ npx vitest run tests/codes.test.ts
 # Deploy to Cloudflare
 npm run deploy
 
+# Test against local Cloudflare Workers runtime (opennextjs-cloudflare build + wrangler preview)
+npm run preview
+
+# Regenerate Cloudflare env types after wrangler.jsonc changes
+npm run cf-typegen
+
 # Node VM target (self-hosted, RUNTIME=node)
 npm run build:node
 npm run start:node
@@ -60,7 +66,7 @@ app/
   (auth)/sign-in/
   api/
     mcp/          ← MCP endpoint at /api/mcp (PAT bearer auth)
-    workspace/    ← legacy mutation route (being superseded by Server Actions)
+    workspace/    ← thin mutation dispatcher → delegates to lib/services/*
     auth/         ← Better Auth handler
     uploads/      ← R2/local file serving
     client/[token]/  ← public client board uploads (unauthenticated)
@@ -69,9 +75,23 @@ app/
 
 ### Data flow
 
-Pages and layouts call functions in **`lib/data.ts`** (read) and **`lib/actions.ts`** (write, all Server Actions). Both use `getDb()` directly and call `lib/services/*` for shared business logic.
+Pages and layouts call functions in **`lib/data.ts`** (read) and **`lib/actions.ts`** (write, all Server Actions). Both call `lib/services/*` for shared business logic. The workspace API route (`app/api/workspace/route.ts`) is a thin dispatcher that also delegates to `lib/services/*`.
 
-The **MCP server** (`lib/mcp/server.ts`, mounted at `/api/mcp/route.ts`) calls the same `lib/services/*` functions as the web app — identical validation, authz, and activity logging. Write tools are only registered when the PAT scope is `readwrite`.
+**`lib/services/`** is the canonical mutation layer, shared by the web app, workspace API, and MCP: `_shared.ts`, `branches.ts`, `categories.ts`, `checklist.ts`, `comments.ts`, `labels.ts`, `members.ts`, `notes.ts`, `projects.ts`, `reads.ts`, `requests.ts`, `spaces.ts`, `status-updates.ts`, `statuses.ts`, `tasks.ts`. Each exports typed input schemas (Zod) and `async fn(viewer, input)` signatures. Do not call `revalidatePath`/`redirect` inside services — those stay in the callers.
+
+The **MCP server** (`lib/mcp/server.ts`, mounted at `app/api/mcp/route.ts`) calls the same `lib/services/*` functions — identical validation, authz, and activity logging. Write tools are only registered when the PAT scope is `readwrite`.
+
+### MCP server
+
+Endpoint: `POST /api/mcp` — stateless, one fresh `McpServer` + `WebStandardStreamableHTTPServerTransport` per request.
+
+**Auth**: Bearer token `seed_pat_…` resolved by `getViewerFromToken()` in `lib/auth-token.ts`. The function derives a `Viewer` identical to `getViewer()` and performs the same `disabledAt` check — so all downstream authz helpers work unchanged.
+
+**Scope gating**: `read` tokens see 7 read tools; `readwrite` tokens see all 18 tools (read + write). Admin-tier write tools (`create-project`, etc.) re-check `isAdminTier(viewer.role)` inside the handler as defense-in-depth.
+
+**Origin guard**: `app/api/mcp/route.ts` validates the `Origin` header against `MCP_ALLOWED_ORIGINS` (env var, comma-separated). A missing `Origin` passes (non-browser clients). Configure in `.dev.vars` and `wrangler.jsonc`.
+
+**Personal Access Tokens (PATs)**: minted at `/settings/tokens` (UI) or via `POST /api/account/tokens`. Schema is `personalAccessToken` in `lib/db/schema.ts`; only the SHA-256 hash is stored; raw value shown once at creation. Do **not** install `@better-auth/api-key` — Seeder deliberately hand-rolls PATs.
 
 ### Auth & authorization
 
@@ -112,4 +132,50 @@ Per `CONTRIBUTING.md`, pay extra attention when modifying:
 
 ## Testing
 
-Tests live in `tests/` and are pure-unit: they must not import Next.js server-only modules, `getDb()`, or runtime-specific code. The `@/` alias maps to the project root. Run a single file with `npx vitest run tests/<file>.test.ts`.
+Tests live in `tests/` and are pure-unit: they must not import Next.js server-only modules, `getDb()`, or runtime-specific code. The `@/` alias maps to the project root.
+
+```bash
+npx vitest run tests/<file>.test.ts   # single file
+npm run test:watch                     # watch mode
+```
+
+Significant test files: `auth-token.test.ts`, `codes.test.ts`, `member-permissions.test.ts`, `public-board.test.ts`, `services-helpers.test.ts`, `storage-local.test.ts`, `storage-r2.test.ts`, `task-statuses.test.ts`. MCP smoke tests live at `tests/bench-mcp.test.ts`.
+
+## 狗头协同系统（Goutou Multi-Repo Coordination）
+
+This repo is the **commander repo** for the Goutou coordination system. It hosts the Seeder instance whose MCP bus the other repos connect to.
+
+### Installed skills
+
+| Skill | Role | Trigger |
+|---|---|---|
+| `/goutou-commander` | Create a coordination task in Seeder (this repo only) | `/goutou-commander <requirement>` |
+| `/goutou` | Soldier: poll Seeder for tasks assigned to this repo | `/goutou` or `/loop 5m /goutou` |
+| `/goutou-converge` | Commander: synthesize when all soldiers have replied | `/goutou-converge` or `/loop 30m /goutou-converge` |
+| `/goutou-status` | Read-only status matrix of all coord tasks | `/goutou-status` |
+
+Install / update skills: `cp skills/<name>/SKILL.md ~/.claude/skills/<name>/SKILL.md`
+
+Full guide: `docs/goutou/README.md`
+
+### MCP config for sub-repos
+
+Each sub-repo (contract, kms, dvt, sdk, app) needs Seeder added as an MCP server. Add to `~/.claude.json`:
+
+```json
+{
+  "mcpServers": {
+    "seeder": {
+      "type": "http",
+      "url": "https://your-seeder.example.com/api/mcp",
+      "headers": { "Authorization": "Bearer seed_pat_…" }
+    }
+  }
+}
+```
+
+Create a PAT at **Settings → API Tokens** (scope: `readwrite`).
+
+### Label routing convention
+
+`repo:<repoId>` labels route tasks to the right soldier. REPO_ID is auto-detected from `git remote get-url origin` (last path segment, no `.git`), or set explicitly in `.goutou.json → repoId`.
