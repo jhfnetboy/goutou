@@ -45,15 +45,20 @@ cat .goutou.json 2>/dev/null || echo "{}"
 **收敛判断逻辑：**
 
 ```
-分配的工兵仓库 = task.labels 里所有 name 以 "repo:" 开头的标签值
+分配的工兵仓库（按优先级）：
+  P1（优先）: task.labels 里所有 name 以 "repo:" 开头的标签值
+  P0（降级）: 若 labels 为空，从 task.description 提取 "repo:<X>" 空格分隔 token
+
 已回复仓库    = 评论列表里含 "[repo:<X>] 工兵回复" 的去重集合
 待响应仓库    = 分配的工兵仓库 - 已回复仓库
 ```
 
+> 提取已回复仓库时：评论 `text` 字段是纯文本（heading 标记已剥离），直接查找 `[repo:<X>] 工兵回复` 文字。
+> 从评论 marker `[repo:sdk]` 得 repoId = `sdk`（去掉 `[repo:` 前缀和 `]` 后缀）。
+
+- `分配的工兵仓库 == 空`（无标签也无 description token）：跳过此任务（纯军师任务或无路由信息）
 - `待响应仓库 == 空`：**完全收敛** → 需要汇总 + 推进状态
 - `待响应仓库 != 空`：**部分收敛** → 仅记录，不处理
-
-> 若一个任务没有 `repo:*` 标签（纯军师任务），跳过收敛检查。
 
 ### Step 3：对「完全收敛」任务生成汇总
 
@@ -107,7 +112,7 @@ cat .goutou.json 2>/dev/null || echo "{}"
 
 调用 `list-task-statuses`（projectId = coordProjectId）找到"进行中"类状态（name 含 `doing`/`进行`/`in progress`/`进中`，或 `isInitial=false` 且 `isTerminal=false` 的第一个）。
 
-若找到合适状态 → 调用 `update-task-status`（taskId, statusId）。
+若找到合适状态 → 调用 `update-task-status`（projectId = coordProjectId，taskId，statusId）。
 
 若项目只有 initial/terminal 两种状态 → 不改状态，在汇总评论末尾注明「请手动将任务移至"进行中"。」
 
@@ -119,7 +124,7 @@ cat .goutou.json 2>/dev/null || echo "{}"
 已扫描协同任务：<n> 个
 
 完全收敛（已汇总）：<m> 个
-  ✅ <任务标题>（<code>）→ 状态已推进至"进行中"
+  ✅ <任务标题>（<code>）→ 状态：<update-task-status 实际结果，成功则写新状态名，失败则写"状态推进失败，请手动操作">
 
 部分收敛（等待中）：<k> 个
   ⏳ <任务标题>（<code>）— 等待：repo:contract, repo:dvt

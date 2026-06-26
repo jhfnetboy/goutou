@@ -30,13 +30,19 @@ cat .goutou.json 2>/dev/null || echo "{}"
 
 调用 `list-tasks`（projectId = coordProjectId，verbose = true）。
 
-### Step 3：对每个任务，补全评论状态
+### Step 3：对每个任务，补全标签 + 评论状态
 
-对非 terminal 任务，调用 `list-task-comments` 获取评论列表。
+对非 terminal 任务，并行执行两个调用：
+- `read-task`（projectId = coordProjectId，taskId = 任务 id）→ 获取 `labels[]` 和 `description`
+- `list-task-comments`（projectId = coordProjectId，taskId = 任务 id）→ 获取评论列表
 
-从 labels（P1：直接读 labels 字段；P0：task description 里的 `repos:` 行）提取分配工兵列表。
+（注：`list-tasks` 返回精简行，不含 labels 或 description；两者均须通过 `read-task` 获取。）
 
-从评论中识别已回复工兵（`[repo:*] 工兵回复` 格式）。
+**提取分配工兵列表（按优先级）：**
+- P1（优先）：`task.labels` 里所有 name 以 `repo:` 开头的标签值（如 `repo:sdk`）
+- P0（降级）：若 labels 为空，从 `task.description` 提取空格分隔的 `repo:<X>` token（格式如 `repo:contract repo:sdk repo:dvt`）
+
+从评论的 `text` 字段识别已回复工兵：查找含 `[repo:<X>] 工兵回复` 的评论（`text` 为纯文本，heading 标记已剥离，格式正常保留）。
 
 ### Step 4：输出状态矩阵
 
