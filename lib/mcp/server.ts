@@ -264,12 +264,13 @@ function registerReadTools(server: McpServer, viewer: Viewer) {
     {
       title: "List tasks",
       description:
-        "List tasks in projects you can access. Filter by projectId, statusId (a status id from list-task-statuses), assignedToMe, or branch (a branch id from list-branches — omit to list across all branches). Capped at 100 — use filters to narrow. Returns a lean row (id, code, title, status, isTerminal, priority, projectId, assigneeId, dueDate); pass verbose:true to also include statusColor and branchId. Read-only.",
+        "List tasks in projects you can access. Filter by projectId, statusId (a status id from list-task-statuses), assignedToMe, branchId (from list-branches), or labelName (exact label name, e.g. 'repo:sdk'). Omit projectId to list across all accessible projects. Capped at 100 — use filters to narrow. Returns a lean row (id, code, title, status, isTerminal, priority, projectId, assigneeId, dueDate); pass verbose:true to also include statusColor and branchId. Read-only.",
       inputSchema: {
         projectId: z.string().optional(),
         statusId: z.string().optional(),
         assignedToMe: z.boolean().optional(),
         branchId: z.string().optional(),
+        labelName: z.string().optional(),
         verbose: z.boolean().optional(),
       },
       annotations: { readOnlyHint: true },
@@ -282,7 +283,7 @@ function registerReadTools(server: McpServer, viewer: Viewer) {
     {
       title: "Read task",
       description:
-        "Read one task (with its subtasks) by id. The description is returned as plain text by default; pass format:'rich' for the raw editor (TipTap) JSON. Returns null if it doesn't exist or you can't access it. Read-only.",
+        "Read one task (with its checklist and labels) by id. The description is returned as plain text by default; pass format:'rich' for the raw editor (TipTap) JSON. Returns null if it doesn't exist or you can't access it. Read-only.",
       inputSchema: {
         projectId: z.string(),
         taskId: z.string(),

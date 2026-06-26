@@ -6,7 +6,7 @@
 // getPersonalProjectIds), single-entity reads gate on canAccessProject and
 // return null/[] on a miss (never throw, so they can't be used as an existence
 // oracle). Output shapes are compact (no internal/sensitive fields).
-import { and, asc, desc, eq, gte, inArray, lt } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 
 import type { Viewer } from "@/lib/auth-server";
 import { canAccessProject, getPersonalProjectIds } from "@/lib/authz";
@@ -22,6 +22,8 @@ import {
   projects,
   projectStatusUpdates,
   taskChecklistItems,
+  taskLabels,
+  taskTaskLabels,
   tasks,
   type ActivityAction,
   type ActivityChange,
@@ -79,6 +81,7 @@ export type TaskDetail = TaskSummary & {
   description: string | null;
   category: { id: string; name: string } | null;
   checklist: { id: string; content: string; isCompleted: boolean }[];
+  labels: { id: string; name: string; color: string }[];
 };
 
 export type RequestSummary = {
@@ -257,6 +260,7 @@ export async function listTasks(
     statusId?: string;
     assignedToMe?: boolean;
     branchId?: string;
+    labelName?: string;
     verbose?: boolean;
   },
 ): Promise<TaskSummary[]> {
@@ -279,6 +283,16 @@ export async function listTasks(
   if (filter?.statusId) clauses.push(eq(tasks.statusId, filter.statusId));
   if (filter?.branchId) clauses.push(eq(tasks.branchId, filter.branchId));
   if (filter?.assignedToMe) clauses.push(eq(tasks.assigneeId, viewer.id));
+  if (filter?.labelName) {
+    clauses.push(
+      sql`EXISTS (
+        SELECT 1 FROM task_task_labels ttl
+        INNER JOIN task_labels tl ON ttl.label_id = tl.id
+        WHERE ttl.task_id = ${tasks.id}
+        AND tl.name = ${filter.labelName}
+      )`,
+    );
+  }
   const capped = await db
     .select()
     .from(tasks)
@@ -320,16 +334,27 @@ export async function readTask(
     .limit(1);
   if (!task) return null;
 
-  const checklist = await db
-    .select({
-      id: taskChecklistItems.id,
-      content: taskChecklistItems.content,
-      isCompleted: taskChecklistItems.isCompleted,
-    })
-    .from(taskChecklistItems)
-    .where(eq(taskChecklistItems.taskId, input.taskId))
-    .orderBy(asc(taskChecklistItems.sortOrder))
-    .limit(MAX_ROWS);
+  const [checklist, labels] = await Promise.all([
+    db
+      .select({
+        id: taskChecklistItems.id,
+        content: taskChecklistItems.content,
+        isCompleted: taskChecklistItems.isCompleted,
+      })
+      .from(taskChecklistItems)
+      .where(eq(taskChecklistItems.taskId, input.taskId))
+      .orderBy(asc(taskChecklistItems.sortOrder))
+      .limit(MAX_ROWS),
+    db
+      .select({
+        id: taskLabels.id,
+        name: taskLabels.name,
+        color: taskLabels.color,
+      })
+      .from(taskTaskLabels)
+      .innerJoin(taskLabels, eq(taskTaskLabels.labelId, taskLabels.id))
+      .where(eq(taskTaskLabels.taskId, input.taskId)),
+  ]);
 
   const slugs = await slugMap([input.projectId]);
   return {
@@ -350,6 +375,7 @@ export async function readTask(
       ? { id: task.categoryId, name: task.categoryName ?? "" }
       : null,
     checklist,
+    labels,
   };
 }
 
