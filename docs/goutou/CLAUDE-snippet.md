@@ -41,4 +41,9 @@ Create `.goutou.json` in this repo root (gitignored):
 }
 ```
 
-Install the skill: `cp <goutou-repo>/skills/goutou/SKILL.md ~/.claude/skills/goutou/SKILL.md`
+Install the skills:
+```bash
+mkdir -p ~/.claude/skills/goutou ~/.claude/skills/goutou-status
+cp <goutou-repo>/skills/goutou/SKILL.md ~/.claude/skills/goutou/SKILL.md
+cp <goutou-repo>/skills/goutou-status/SKILL.md ~/.claude/skills/goutou-status/SKILL.md
+```
