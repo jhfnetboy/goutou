@@ -38,7 +38,7 @@ cat .goutou.json 2>/dev/null || echo "{}"
 在返回的项目列表中查找名称含以下关键词的项目（不区分大小写）：
 `协同`、`coord`、`goutou`、`军师`、`hub`
 
-- **找到 1 个** → 记录 `coordProjectId`
+- **找到 1 个** → 记录 `coordProjectId`；若 `.goutou.json` 无此字段，立即写入（Read→合并→Write），避免后续失败重复搜索
 - **找到多个** → 列出所有匹配项目，请用户确认用哪个，或在 `.goutou.json` 中设置 `coordProjectId` 精确锁定，停止执行
 - **未找到** → 告知用户：「请先在 Seeder 里创建一个协同中枢项目，然后在 .goutou.json 里设置 coordProjectId，或将项目命名为包含"协同/coord/goutou"。」停止执行
 
@@ -72,7 +72,7 @@ description = "repo:<仓库1> repo:<仓库2> repo:<仓库3>"
 
 **description 格式严格**：每个涉及仓库用 `repo:` 前缀、空格分隔（如 `repo:contract repo:sdk repo:dvt`）。这是工兵 P0 阶段 `search("repo:<ID>")` 能找到此任务的唯一依据——Seeder 只索引任务标题和描述，不索引评论。
 
-记录返回的 `taskId`。
+记录返回的 `taskId`。然后调用 `read-task`（projectId = coordProjectId，taskId = 新 taskId）获取任务 `code`（任务编号，如 `COORD-42`）和 `title`，供 Step 8 展示。
 
 ### Step 4：确保 repo:* 标签存在
 
@@ -81,6 +81,7 @@ description = "repo:<仓库1> repo:<仓库2> repo:<仓库3>"
 1. 调用 `list-task-labels`（projectId = coordProjectId）
 2. 检查是否已有名为 `repo:<仓库ID>` 的标签（精确匹配）
 3. 若无 → 调用 `create-task-label`：
+   - `projectId` = `coordProjectId`
    - `name` = `repo:<仓库ID>`
    - `color` = 按下表分配（必须精确匹配 Seeder 的 24 色 palette，否则 Zod 校验失败）：
      - `repo:contract` → `#eb5757`（Red）
@@ -132,14 +133,6 @@ labelIds  = [所有涉及仓库对应的 labelId]
 
 > **注意**：搜索路由标记已写入 Step 3 的 task description（`repo:xxx` 格式），评论无需重复写。
 
-### Step 7：更新本地配置（若 coordProjectId 是新发现的）
-
-若本次是通过搜索项目名找到协同中枢，且 `.goutou.json` 里没有 `coordProjectId`：
-
-1. 用 Read 工具读取 `.goutou.json`（若不存在则视为 `{}`）
-2. 合并 `coordProjectId` 字段
-3. 用 Write 工具写回（保留已有字段，不覆盖 `repoId`/`seederUrl` 等）
-
 ### Step 8：输出结果
 
 向用户展示：
@@ -163,4 +156,4 @@ labelIds  = [所有涉及仓库对应的 labelId]
 - Seeder MCP 未配置 → 告知用户按 docs/goutou/README.md 配置 MCP
 - PAT 为 read 只读 → 告知需要 readwrite scope 的 PAT
 - 协同项目未找到 → 见 Step 1 的处理
-- 标签创建失败（非 owner/leader）→ 告知用户需要在协同项目中有 owner 或 leader 权限
+- 标签创建失败（权限不足）→ 告知用户：标签管理需要协同项目的 `taxonomy.manage` 能力，默认 owner/leader 有此权限，但也可能被项目管理员单独授权给 member；请检查 Seeder 项目成员权限设置

@@ -66,7 +66,7 @@ cp skills/goutou/SKILL.md ~/.claude/skills/goutou/SKILL.md
 
 > 如果 Seeder 在本地开发（`npm run dev`），URL 为 `http://localhost:3000/api/mcp`。
 
-验证：在任意目录打开 Claude Code，输入 `whoami`，应返回你的 Seeder 账号信息。
+验证：在 Claude Code 里输入「调用 Seeder MCP 的 whoami 工具，告诉我当前登录账号」，应返回你的 Seeder 账号名称和邮箱。
 
 ### 4. 在 Seeder 创建协同中枢项目
 
