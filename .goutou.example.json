@@ -1,0 +1,6 @@
+{
+  "_comment": "Copy to .goutou.json and fill in your values. This file is safe to commit.",
+  "repoId": "sdk",
+  "coordProjectId": "",
+  "seederUrl": "https://your-seeder.example.com"
+}
