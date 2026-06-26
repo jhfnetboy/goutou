@@ -50,14 +50,16 @@ basename "$(pwd)"
 
 未找到 → 输出提示：「未找到协同中枢项目。请确认 Seeder 里已创建协同项目，或在 .goutou.json 里设置 coordProjectId。」停止。
 
-### Step 2：搜索分配给本仓库的任务
+### Step 2：拉取分配给本仓库的任务
 
-调用 `search`（Seeder MCP）：
+**首选（P1，Seeder ≥ 当前版本）**：调用 `list-tasks`（Seeder MCP）：
 ```
-query = "repo:<REPO_ID>"
+projectId = coordProjectId
+labelName = "repo:<REPO_ID>"
 ```
 
-从结果中筛选出 `type = "task"` 且 `projectId = coordProjectId` 的 hit。
+**降级（P0，Seeder 较旧版本 / list-tasks 不支持 labelName 时）**：
+调用 `search("repo:<REPO_ID>")` → 筛选 `type = "task"` 且 `projectId = coordProjectId` 的结果。
 
 > **精确匹配陷阱**：`search` 做子字符串匹配，`repo:app` 会误命中描述含 `repo:app2` 的任务。在 Step 3 的 `read-task` 后，额外检查 task description 中是否含精确 token `repo:<REPO_ID>`（以空格或行尾分隔，如 `repo:sdk ` 或行末 `repo:sdk`），不满足则跳过。
 
@@ -68,6 +70,8 @@ query = "repo:<REPO_ID>"
 对每个 hit，并行执行两个调用：
 - `read-task`（projectId = coordProjectId，taskId = hit.id）→ 获取状态和描述
 - `list-task-comments`（projectId = coordProjectId，taskId = hit.id）→ 获取评论列表
+
+> `read-task` 现在返回 `labels[]`（含 id/name/color），可作为第二路径确认 `repo:<REPO_ID>` 标签存在（P1 feature）。
 
 **跳过条件**（满足任一则跳过此任务，不发任何评论）：
 1. `isTerminal = true`（任务已完结）
