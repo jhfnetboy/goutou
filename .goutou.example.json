@@ -1,6 +1,5 @@
 {
-  "_comment": "Copy to .goutou.json and fill in your values. This file is safe to commit.",
+  "_comment": "Copy to .goutou.json (gitignored) and fill in your values. Omit coordProjectId to let skills auto-discover by project name.",
   "repoId": "sdk",
-  "coordProjectId": "",
   "seederUrl": "https://your-seeder.example.com"
 }
