@@ -50,20 +50,24 @@ basename "$(pwd)"
 
 未找到 → 输出提示：「未找到协同中枢项目。请确认 Seeder 里已创建协同项目，或在 .goutou.json 里设置 coordProjectId。」停止。
 
-### Step 2：搜索分配给本仓库的任务
+### Step 2：拉取分配给本仓库的任务
 
-调用 `search`（Seeder MCP）：
+**首选（P1，Seeder ≥ 当前版本）**：调用 `list-tasks`（Seeder MCP）：
 ```
-query = "repo:<REPO_ID>"
+projectId = coordProjectId
+labelName = "repo:<REPO_ID>"
 ```
 
-从结果中筛选出 `type = "task"` 且 `projectId = coordProjectId` 的 hit。
+**降级（P0，Seeder 较旧版本 / list-tasks 不支持 labelName 时）**：
+调用 `search("repo:<REPO_ID>")` → 筛选 `type = "task"` 且 `projectId = coordProjectId` 的结果。
 
 若无结果 → 输出：「本仓库（<REPO_ID>）暂无待处理的协同任务。」结束。
 
 ### Step 3：逐个读取任务详情，判断是否需要响应
 
 对每个 hit，调用 `read-task`（projectId = coordProjectId，taskId = hit.id）。
+
+> `read-task` 现在返回 `labels[]`（含 id/name/color），可直接确认 `repo:<REPO_ID>` 标签存在。
 
 **跳过条件**（满足任一则跳过此任务）：
 1. `isTerminal = true`（任务已完结）
