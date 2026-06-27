@@ -23,9 +23,9 @@
     "self-hostable"
   ],
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --port 7399",
     "build": "next build --webpack",
-    "start": "next start",
+    "start": "next start --port 7399",
     "setup": "tsx scripts/setup.ts",
     "build:node": "cross-env RUNTIME=node next build --webpack",
     "start:node": "cross-env RUNTIME=node next start",
