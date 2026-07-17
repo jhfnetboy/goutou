@@ -68,3 +68,8 @@ DEPLOY-node.md
 
 # goutou local config (contains project IDs; .goutou.example.json is the safe template)
 .goutou.json
+# goutou watch runtime state (dedup log, regenerated each run)
+.goutou-watch-state.json
+# Seeder watchdog / dev-server runtime logs (regenerated at runtime)
+.seeder-dev.log
+.seeder-watchdog.log
