@@ -1,6 +1,6 @@
 ---
 name: goutou-commander
-description: 狗头军师 — 多仓库协同指挥官。输入一句话业务诉求，自动在 Seeder 协同中枢创建任务、打 repo:* 路由标签、写首条分工评论，输出任务链接。在 goutou 主控仓库使用。触发词：/goutou-commander、"军师帮我协调"、"分发任务"、"多仓库联动"。
+description: 狗头军师 — 多仓库协同指挥官。输入一句话业务诉求，自动在 Seeder 协同中枢创建任务、打 repo:* 路由标签、写首条分工评论，输出任务链接。任意仓库均可发起，需在仓库根目录有 .goutou.json 或 Seeder 里存在协同项目。触发词：/goutou-commander、"军师帮我协调"、"分发任务"、"多仓库联动"。
 ---
 
 # 狗头军师 / Goutou Commander
@@ -16,8 +16,8 @@ description: 狗头军师 — 多仓库协同指挥官。输入一句话业务�
 ## 前置条件
 
 - Seeder MCP server 已配置（`~/.claude.json` 中 `mcpServers.seeder`，PAT scope = `readwrite`）
-- Seeder 里存在「协同中枢」项目（或 `.goutou.json` 中有 `coordProjectId`）
-- 当前工作目录是 goutou 仓库
+- Seeder 里存在「协同中枢」项目（或当前仓库根目录有 `.goutou.json` 含 `coordProjectId`）
+- **任意仓库均可发起**，不限于 goutou 主控仓库
 
 ## 工作流
 
@@ -48,12 +48,13 @@ cat .goutou.json 2>/dev/null || echo "{}"
 
 **需求摘要**（≤ 50 字，作为 Task 标题）
 
-**涉及仓库列表**（推断或从用户说明读取）。常见仓库 ID 参考：
-- `contract` — 智能合约（上游，其他仓库的依赖方）
-- `kms` — 密钥管理服务
-- `dvt` — 后端服务
-- `sdk` — 汇聚合约 ABI + 后端 API（下游 App 的依赖）
-- `app`（或具体名）— 前端/客户端 App
+**涉及仓库列表**（推断或从用户说明读取）。完整 REPO_ID 见 `docs/goutou/REPO-IDS.md`，常用速查：
+
+AAstar: `airaccount` · `air-contract` · `paymaster` · `relay` · `ultrarelay` · `aastar-sdk` · `yaaa`
+AuraAI: `agent24` · `idoris` · `idoris-sdk` · `aura-pkg` · `speaker` · `social`
+Mycelium: `cos72` · `sin90` · `cityos` · `comet` · `pnts` · `park` · `spores` · `launch` · `mytask` · `listener`
+
+依赖方向（上游 → 下游）：`air-contract → airaccount → relay → paymaster → aastar-sdk → cos72/sin90/launch`
 
 **各仓库分工**（每个仓库 2–3 句：做什么、输出什么、依赖什么）
 
@@ -63,43 +64,53 @@ cat .goutou.json 2>/dev/null || echo "{}"
 
 ### Step 3：创建协同任务
 
+**确认发起仓库 REPO_ID**：
+- 读 `.goutou.json` 中的 `repoId` 字段
+- 若无，运行 `git remote get-url origin | sed 's/.*\///' | sed 's/\.git//'` 自动推断
+- 记为 `<MY_REPO_ID>`（如 `goutou`、`sdk`、`cos72`）
+
 调用 `create-task`（Seeder MCP）：
 ```
 projectId   = coordProjectId
 title       = <需求摘要>
-description = "repo:<仓库1> repo:<仓库2> repo:<仓库3>"
+description = "repo:<仓库1> repo:<仓库2> repo:<仓库3> from:<MY_REPO_ID>"
 ```
 
-**description 格式严格**：每个涉及仓库用 `repo:` 前缀、空格分隔（如 `repo:contract repo:sdk repo:dvt`）。这是工兵 P0 阶段 `search("repo:<ID>")` 能找到此任务的唯一依据——Seeder 只索引任务标题和描述，不索引评论。
+**description 格式严格**：
+- 每个涉及仓库用 `repo:` 前缀、空格分隔（如 `repo:contract repo:sdk repo:dvt`）。这是工兵 P0 阶段 `search("repo:<ID>")` 能找到此任务的唯一依据——Seeder 只索引任务标题和描述，不索引评论。
+- `from:<MY_REPO_ID>` 标记发起仓库，供工兵 Step 2c 的完结检查识别（当所有 `repo:X` 均 ✅ 时，`from:` 仓库可自动关闭任务）。
 
 记录返回的 `taskId`。然后调用 `read-task`（projectId = coordProjectId，taskId = 新 taskId）获取任务 `code`（任务编号，如 `COORD-42`）和 `title`，供 Step 8 展示。
 
-### Step 4：确保 repo:* 标签存在
+### Step 4：确保 repo:* 和 from:* 标签存在
 
-对每个涉及仓库，执行：
+对每个涉及仓库**以及发起仓库**，执行（可并行）：
 
 1. 调用 `list-task-labels`（projectId = coordProjectId）
-2. 检查是否已有名为 `repo:<仓库ID>` 的标签（精确匹配）
+2. 检查是否已有名为 `repo:<仓库ID>` 的标签（精确匹配）；同样检查 `from:<MY_REPO_ID>`
 3. 若无 → 调用 `create-task-label`：
    - `projectId` = `coordProjectId`
    - `name` = `repo:<仓库ID>`
-   - `color` = 按下表分配（必须精确匹配 Seeder 的 24 色 palette，否则 Zod 校验失败）：
-     - `repo:contract` → `#eb5757`（Red）
-     - `repo:kms`      → `#8b5cf6`（Amethyst）
-     - `repo:dvt`      → `#5e6ad2`（Aether）
-     - `repo:sdk`      → `#27a644`（Emerald）
-     - 其他            → `#ef8b3a`（Orange）
+   - `color` = 按组织分配（必须精确匹配 Seeder 24 色 palette，否则 Zod 校验失败）：
+     - AAstar 仓库（airaccount/air-contract/paymaster/relay/ultrarelay/aastar-sdk/yaaa/aastar-docs/abi-docs/registry）→ `#5e6ad2`（Aether）
+     - AuraAI 仓库（agent24/idoris/idoris-sdk/aura-pkg/speaker/social）→ `#8b5cf6`（Amethyst）
+     - Mycelium 仓库（cos72/sin90/cityos/comet/pnts/park/spores/launch/mytask/listener/expresser/myvote/mynft）→ `#27a644`（Emerald）
+     - 其他 / 跨组织 → `#ef8b3a`（Orange）
+     
+     完整 REPO_ID 列表见 `docs/goutou/REPO-IDS.md`
 
 可并行处理多个仓库的标签检查+创建。
 
-### Step 5：给任务打路由标签
+### Step 5：给任务打路由标签（含发起仓库标签）
 
 调用 `add-task-label`：
 ```
 projectId = coordProjectId
 taskIds   = [taskId]
-labelIds  = [所有涉及仓库对应的 labelId]
+labelIds  = [所有涉及仓库对应的 labelId] + [from:<MY_REPO_ID> 对应的 labelId]
 ```
+
+> `from:<MY_REPO_ID>` 标签使发起仓库的工兵在 Step 2c 中能用 `list-tasks(labelName="from:<MY_REPO_ID>")` 找到该任务，检测何时可自动完结。
 
 ### Step 6：写首条分工评论
 

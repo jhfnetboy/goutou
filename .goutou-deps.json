@@ -1,0 +1,206 @@
+{
+  "_comment": "依赖图权威源。goutou-watch 读此文件决定变化通知路由。upstream=我依赖谁，downstream=谁依赖我。",
+  "_source": "~/Dev/Brood/docs/ECOSYSTEM_MAP.md 组织间依赖章节",
+  "_updated": "2026-06-27",
+  "_repoIdSource": "docs/goutou/REPO-IDS.md（权威 REPO_ID，与此文件 key 必须一致）",
+  "repos": {
+    "contract": {
+      "github": "AAStarCommunity/airaccount-contract",
+      "localPath": "~/Dev/aastar/airaccount-contract",
+      "org": "aastar",
+      "upstream": [],
+      "downstream": ["kms", "sp"],
+      "changeTypes": ["contract-abi", "solidity-interface"]
+    },
+    "kms": {
+      "github": "AAStarCommunity/AirAccount",
+      "localPath": "~/Dev/aastar/AirAccount",
+      "org": "aastar",
+      "upstream": ["contract"],
+      "downstream": ["relay", "sp", "sdk", "idoris"],
+      "changeTypes": ["http-api", "webauthn", "tee-api"]
+    },
+    "relay": {
+      "github": "AAStarCommunity/super-relay",
+      "localPath": "~/Dev/aastar/super-relay",
+      "org": "aastar",
+      "upstream": ["kms"],
+      "downstream": ["sp"],
+      "changeTypes": ["bundler-api", "erc4337"]
+    },
+    "ultrarelay": {
+      "github": "AAStarCommunity/UltraRelay-AAStar",
+      "localPath": "~/Dev/aastar/UltraRelay-AAStar",
+      "org": "aastar",
+      "upstream": [],
+      "downstream": ["sp"],
+      "changeTypes": ["bundler-api", "erc4337"]
+    },
+    "sp": {
+      "github": "AAStarCommunity/SuperPaymaster",
+      "localPath": "~/Dev/aastar/SuperPaymaster",
+      "org": "aastar",
+      "upstream": ["relay", "ultrarelay", "kms", "contract"],
+      "downstream": ["sdk", "idoris", "launch"],
+      "changeTypes": ["solidity-interface", "contract-abi", "role-system"]
+    },
+    "sdk": {
+      "github": "AAStarCommunity/aastar-sdk",
+      "localPath": "~/Dev/aastar/aastar-sdk",
+      "org": "aastar",
+      "upstream": ["sp", "kms", "comet"],
+      "downstream": ["cos72", "sin90", "launch", "docs"],
+      "changeTypes": ["npm-package", "typescript-api", "breaking-change"]
+    },
+    "yaa": {
+      "github": "AAStarCommunity/YetAnotherAA",
+      "localPath": "~/Dev/aastar/YetAnotherAA",
+      "org": "aastar",
+      "upstream": ["kms"],
+      "downstream": [],
+      "changeTypes": ["http-api"]
+    },
+    "docs": {
+      "github": "AAStarCommunity/aastar-docs",
+      "localPath": "~/Dev/aastar/aastar-docs",
+      "org": "aastar",
+      "upstream": ["sdk"],
+      "downstream": [],
+      "changeTypes": ["docs"]
+    },
+    "agent24": {
+      "github": "AuraAIHQ/Agent24",
+      "localPath": "~/Dev/auraai/Agent24",
+      "org": "auraai",
+      "upstream": [],
+      "downstream": ["sin90"],
+      "changeTypes": ["agent-api", "plugin-interface"]
+    },
+    "idoris": {
+      "github": "AuraAIHQ/iDoris",
+      "localPath": "~/Dev/auraai/iDoris",
+      "org": "auraai",
+      "upstream": ["sp", "kms"],
+      "downstream": ["sin90", "cityos", "idoris-sdk"],
+      "changeTypes": ["ai-model-api", "inference-api"]
+    },
+    "idoris-sdk": {
+      "github": "AuraAIHQ/iDoris-SDK",
+      "localPath": "~/Dev/auraai/iDoris-SDK",
+      "org": "auraai",
+      "upstream": ["idoris"],
+      "downstream": [],
+      "changeTypes": ["npm-package", "wechat-bridge"]
+    },
+    "aura-pkg": {
+      "github": "AuraAIHQ/auraai-packages",
+      "localPath": "~/Dev/auraai/auraai-packages",
+      "org": "auraai",
+      "upstream": [],
+      "downstream": ["agent24", "idoris-sdk"],
+      "changeTypes": ["npm-package"]
+    },
+    "speaker": {
+      "github": "AuraAIHQ/agent-speaker",
+      "localPath": "~/Dev/auraai/agent-speaker",
+      "org": "auraai",
+      "upstream": [],
+      "downstream": ["agent24"],
+      "changeTypes": ["nostr-protocol", "p2p-api"]
+    },
+    "social": {
+      "github": "AuraAIHQ/AgentSocial",
+      "localPath": "~/Dev/auraai/AgentSocial",
+      "org": "auraai",
+      "upstream": ["agent24"],
+      "downstream": [],
+      "changeTypes": ["social-protocol"]
+    },
+    "comet": {
+      "github": "MushroomDAO/CometENS",
+      "localPath": "~/Dev/mycelium/CometENS",
+      "org": "mycelium",
+      "upstream": [],
+      "downstream": ["sdk", "cos72"],
+      "changeTypes": ["ens-api", "subdomain-api"]
+    },
+    "pnts": {
+      "github": "MushroomDAO/OpenPNTs",
+      "localPath": "~/Dev/mycelium/OpenPNTs",
+      "org": "mycelium",
+      "upstream": [],
+      "downstream": ["cos72", "sin90", "launch"],
+      "changeTypes": ["contract-abi", "points-api"]
+    },
+    "park": {
+      "github": "MushroomDAO/Park",
+      "localPath": "~/Dev/mycelium/Park",
+      "org": "mycelium",
+      "upstream": [],
+      "downstream": ["cos72"],
+      "changeTypes": ["public-goods-protocol"]
+    },
+    "spores": {
+      "github": "MushroomDAO/Spores",
+      "localPath": "~/Dev/mycelium/Spores",
+      "org": "mycelium",
+      "upstream": [],
+      "downstream": ["cos72"],
+      "changeTypes": ["collaboration-protocol"]
+    },
+    "cos72": {
+      "github": "MushroomDAO/Cos72",
+      "localPath": "~/Dev/mycelium/Cos72",
+      "org": "mycelium",
+      "upstream": ["sdk", "comet", "pnts", "park", "spores"],
+      "downstream": ["cityos", "launch"],
+      "changeTypes": ["community-os-api", "frontend"]
+    },
+    "sin90": {
+      "github": "MushroomDAO/Sin90",
+      "localPath": "~/Dev/mycelium/Sin90",
+      "org": "mycelium",
+      "upstream": ["sdk", "agent24", "idoris", "pnts"],
+      "downstream": ["cityos"],
+      "changeTypes": ["personal-os-api", "frontend"]
+    },
+    "cityos": {
+      "github": "MushroomDAO/CityOS",
+      "localPath": "~/Dev/mycelium/CityOS",
+      "org": "mycelium",
+      "upstream": ["cos72", "sin90", "idoris"],
+      "downstream": [],
+      "changeTypes": ["city-os-api", "frontend"]
+    },
+    "launch": {
+      "github": "MushroomDAO/launch",
+      "localPath": "~/Dev/mycelium/launch",
+      "org": "mycelium",
+      "upstream": ["sdk", "sp", "cos72", "pnts"],
+      "downstream": [],
+      "changeTypes": ["launch-app", "frontend"]
+    },
+    "mytask": {
+      "github": "MushroomDAO/MyTask",
+      "localPath": "~/Dev/mycelium/MyTask",
+      "org": "mycelium",
+      "upstream": ["pnts"],
+      "downstream": [],
+      "changeTypes": ["task-protocol"]
+    },
+    "listener": {
+      "github": "MushroomDAO/Listener",
+      "localPath": "~/Dev/mycelium/Listener",
+      "org": "mycelium",
+      "upstream": ["idoris", "agent24"],
+      "downstream": [],
+      "changeTypes": ["ai-entrance-api"]
+    }
+  },
+  "orgColors": {
+    "aastar": "#5e6ad2",
+    "auraai": "#8b5cf6",
+    "mycelium": "#27a644",
+    "special": "#ef8b3a"
+  }
+}

@@ -158,6 +158,12 @@ Install / update skills: `cp skills/<name>/SKILL.md ~/.claude/skills/<name>/SKIL
 
 Full guide: `docs/goutou/README.md`
 
+### PR-review 协同（pr-daemon 集成）
+
+pr-daemon（`~/Dev/tools/pr-daemon`）当 PR-review 引擎，goutou 当协同/路由层。pr-daemon 审到 `REQUEST_CHANGES` 且原仓库已注册时，在 Seeder 建一条 `pr-review` 任务并挂 `repo:<原仓库>` 标签；原仓库跑 `/goutou` 的工兵识别该任务后走 **Step 3-PR 修复分支**（在自己仓库全上下文里修→自审→push→重新请 review），pr-daemon 按 head SHA 变化重审，循环至 approve。首轮就 approve 的 PR 不建任务；bot PR 与非 goutou 仓库的 jhfnetboy PR 仍走 pr-daemon 内部 `$pr-fix`。
+
+规范与去冲突规则：`docs/goutou/PR-REVIEW.md`。
+
 ### MCP config for sub-repos
 
 Each sub-repo (contract, kms, dvt, sdk, app) needs Seeder added as an MCP server. Add to `~/.claude.json`:
