@@ -73,3 +73,5 @@ DEPLOY-node.md
 # Seeder watchdog / dev-server runtime logs (regenerated at runtime)
 .seeder-dev.log
 .seeder-watchdog.log
+.seeder-daemon.state
+.codex-reaper.log
