@@ -50,14 +50,23 @@ curl -s -o /dev/null -w "HTTP %{http_code}\n" -X POST http://localhost:7399/api/
 ## 2. Codex reaper（清 codex 泄漏）
 
 ### 问题
-Codex 审查(review Tier1)每次调用 spawn 一个 `codex app-server` + 若干 `mcp/server.cjs --stdio` 桥接子进程,**从不回收**。一两周攒到数百个、几个 G 内存(事故:221 app-server + 153 桥接 ≈ **9GB**),全 0% CPU 闲置,挤爆内存会**间接害 Seeder 崩**。**与 seeder-daemon 无关**,单列此 reaper。
+Codex 审查(review Tier1)每次调用 spawn 一条**三层链**,后两层从不回收:
+```
+app-server-broker.mjs (node broker)  →  codex app-server (native)  →  mcp/server.cjs --stdio (桥接)
+```
+一两周攒到数百个、几个 G 内存(事故:221 app-server + 153 桥接 ≈ **9GB**),全 0% CPU 闲置,挤爆内存会**间接害 Seeder 崩**。**与 seeder-daemon 无关**,单列此 reaper。
 
 ### 方案
 - 脚本:`scripts/codex-reaper.sh`
 - launchd:`~/Library/LaunchAgents/com.goutou.codex-reaper.plist`(`RunAtLoad` + `StartInterval=1800`,每 30 分钟)
 - 日志:`.codex-reaper.log`
 
-**安全判据**(宁可漏杀,不可错杀正在跑的审查):只杀「存活 > `MIN_AGE=1800s`(30 分钟) **且** 累计 CPU < `MAX_CPU=60s`」的 `codex app-server` —— 活了很久却几乎没干活 = 僵。刚 spawn 的活审查年龄不够、跑过活的 CPU 够高,都不碰。app-server 杀掉后其桥接子进程变孤儿(ppid=1),再清孤儿。
+**安全判据**(宁可漏杀,不可错杀正在跑的审查):
+- **`codex app-server`(native 层)**:只杀「存活 > `MIN_AGE=1800s`(30 分钟) **且** 累计 CPU < `MAX_CPU=60s`」—— 活了很久却几乎没干活 = 僵。刚 spawn 的活审查年龄不够、跑过活的 CPU 够高,都不碰。
+  **且排除 `/Applications/Codex.app/` 桌面版后台**——桌面版常年存活、低 CPU,会误命中 age+cpu 判据被 SIGKILL,破坏用户的 Codex 桌面 App。
+- **`mcp/server.cjs`(桥接层)**:只杀 **ppid=1 孤儿**(父 app-server 死了才会变孤儿)。
+
+> **broker 层不碰**:broker 由插件以 `detached`(`unref`)方式 spawn,**`ppid=1` 是它的设计稳态而非孤儿信号**;插件按 **cwd** 复用存活 broker(探 unix socket,不看 ppid),用 ppid 判据会误杀正在被复用的活 broker。安全回收 broker 需探 socket 存活性 + 走插件自带的优雅关闭,属**未来工作**,当前一律不动 broker。
 
 > macOS `ps` 用 `etime`(格式 `[[dd-]hh:]mm:ss`),无 Linux 的 `etimes`(秒);脚本用 awk 解析。
 
