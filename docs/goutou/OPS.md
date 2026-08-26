@@ -1,48 +1,95 @@
 # Goutou 运维手册（OPS）
 
-commander 机器上跑着两个 launchd 常驻任务:**Seeder watchdog**(保活协同中枢)和 **Codex reaper**(清 codex 泄漏)。本文是它们的故障排查 + 复现指南。
+commander 机器上跑着三个 launchd 任务:**Seeder 服务本体**(`com.goutou.seeder`,KeepAlive 常驻)、**Seeder 健康 watchdog**(`com.goutou.seeder-watchdog`,每 60s 探活)和 **Codex reaper**(清 codex 泄漏)。本文是它们的故障排查 + 复现指南。
 
 ---
 
-## 1. Seeder watchdog（服务保活）
+## 1. Seeder 保活（launchd 直接监管 + 健康 watchdog）
 
-Seeder(端口 **7399**)以 `RUNTIME=node` + libsql 常驻。watchdog 每 60s 健康检查,挂了自动重启。
+Seeder(端口 **7399**)以 `RUNTIME=node` + libsql 常驻。**两个 launchd 任务分工**:
 
-- 脚本:`scripts/seeder-daemon.sh`
-- launchd:`~/Library/LaunchAgents/com.goutou.seeder-watchdog.plist`(`RunAtLoad` + `StartInterval=60`)
-- 状态:`.seeder-daemon.state`(gitignored,存 `last_restart` / `fails` / `node_build_id`)
-- 日志:`.seeder-dev.log`(应用 + 重启)、`.seeder-watchdog.log`(launchd)
+| 任务 | 角色 | 触发 |
+|---|---|---|
+| `com.goutou.seeder` | **服务本体**。`scripts/seeder-run.sh` 结尾 `exec` 进 `next start`,前台常驻,launchd 用 `KeepAlive` 直接监管 —— 进程一死秒级拉回 | `RunAtLoad` + `KeepAlive` |
+| `com.goutou.seeder-watchdog` | **健康检查器**。只探 HTTP、**绝不自己 spawn 进程**;判死后 `launchctl kickstart -k` 把重启动作交回 launchd | `StartInterval=60` |
+
+- 脚本:`scripts/seeder-run.sh`(启动器) / `scripts/seeder-daemon.sh`(健康检查)
+- launchd:`~/Library/LaunchAgents/com.goutou.seeder.plist` / `com.goutou.seeder-watchdog.plist`
+- 状态:`.seeder-daemon.state`(存 `last_restart`/`fails`)、`.next/.node-build-marker`(node 产物指纹)、`.seeder-building`(构建中标记) —— 均 gitignored
+- launchd plist 副本随仓库分发:`launchd/`(换机器时改里面的绝对路径再 `cp` 到 `~/Library/LaunchAgents/`)
+- 日志:`.seeder-server.log`(服务本体) / `.seeder-watchdog-health.log`(健康事件,健康时为空)
 
 ### 健康判据
-带**真 PAT** 打 `/api/mcp` initialize —— **只有 200** 才算 D1 真活着(解析 PAT 要查 D1)。
-无 auth 探测(→401)不碰 D1,僵尸 500 时仍返回 401 → 会误判健康,**不可用**。
+带**真 PAT** 打 `/api/mcp` initialize —— **只有 200** 才算 DB 真活着(解析 PAT 要查库)。
+无 auth 探测(→401)不碰 DB,僵尸 500 时仍返回 401 → 会误判健康,**不可用**。
 
-### 三个防「渣」设计（2026-07-24 修 boot-crash 死循环）
+### 历史事故根因 A：守护进程杀死自己拉起的服务（2026-08-26 定位并修复）
+**症状**:服务反复「暂停死掉」,watchdog 看似在跑却毫无用处。日志实测 **拉起 1132 次,只有 3 次活到打印启动 banner**。
+
+**根因**:旧 `seeder-daemon.sh` 用 `nohup next start &` + `disown` 后台拉起,然后立刻 `exit 0`。
+launchd 的 **`AbandonProcessGroup` 默认 `false`** —— 语义是「job 主进程退出时,同进程组里残留的进程一律 SIGKILL」。
+`nohup` 只挡 SIGHUP、`disown` 只改 bash 的作业表,**两者都拦不住 launchd 的定向击杀**。
+于是脚本 spawn 完几毫秒就退出 → launchd 当场灭掉刚生出来的 Next → 60s 后再拉、再被灭,死循环。
+
+**修复**:服务本体交给独立的 `com.goutou.seeder` job 前台 `exec` 运行,launchd 监管的就是 Next 进程本身;
+watchdog 降级为纯健康检查器,重启一律走 `launchctl kickstart -k`,不再持有任何服务进程。
+
+> 通用教训:**launchd 任务里不要后台 spawn 长驻进程**。要么让 job 自己前台跑那个进程(`exec` + `KeepAlive`),
+> 要么显式设 `AbandonProcessGroup=true`。前者更好 —— 崩溃重启、日志、状态都由 launchd 统一管。
+
+### 历史事故根因 B：Cloudflare 产物覆盖导致僵尸 500
+某次 `npm run build`(发布用)把 `.next` 覆盖成 **Cloudflare 产物**(打进 d1 driver)。
+driver 在 **build 期**定死,运行时才 `export RUNTIME=node` 已**太晚** → 每个请求去连早已死掉的 workerd D1 代理
+(`ECONNREFUSED 127.0.0.1:<随机端口>` / `MessagePort worker(eval)`)→ 500 僵尸态。
+
+**现在的闭环**:`seeder-run.sh` 启动前比对 `.next/BUILD_ID` 与 `.next/.node-build-marker`,不一致就先 `build:node` 再起;
+watchdog 探到 **5xx** 时主动删掉 marker 再 kickstart,强制重建。改 Seeder 代码或发布后仍建议手动 `npm run build:node`。
+
+### 防「渣」设计
 | 防护 | 作用 |
 |---|---|
-| **① ensure_node_build** | driver 在 **build 时**按 `RUNTIME` 打包(`build:node`=libsql / 普通 `build`=d1)。若 `.next/BUILD_ID` ≠ 记录的 node 构建 id(被 `npm run build` 覆盖成 Cloudflare 产物)→ 先 `build:node` 重建再拉起 |
-| **② 启动宽限 GRACE=45s** | 刚(重)启的实例 45s 内不判死不重杀,给 boot 时间 |
-| **③ 失败退避** | 连续 `MAXFAILS=4` 次拉起仍不健康 → 改成每 `BACKOFF=600s` 才试一次并大声记日志,不再每 60s 锤 |
+| **KeepAlive + ThrottleInterval=10s** | 服务崩了秒级拉回;两次启动最小间隔 10s,防 boot-crash 刷爆 |
+| **build 失败退避 120s** | `build:node` 失败时脚本 `sleep 120` 再退出,避免 `KeepAlive` 疯狂空转重编译 |
+| **启动宽限 GRACE=90s** | 刚 kickstart 的实例不判死,给 boot 时间;state 缺失时 `last_restart` 初始化为「此刻」,首轮同样享受宽限 |
+| **构建避让(标记文件)** | `seeder-run.sh` 构建期间落 `.seeder-building`(带时间戳,`trap` 保证异常也清),watchdog 见到就**直接放行不 kickstart**。超 `BUILD_GRACE=420s` 视为 stale 残留。**不用 `pgrep -f "next build"`** —— Next 会重写进程标题,实测匹配不到,2026-08-26 演练中因此腰斩过一次构建,逼得 build 跑了两遍 |
+| **失败退避** | 连续 `MAXFAILS=4` 次 kickstart 仍不健康 → 改成每 `BACKOFF=600s` 才试一次并大声记日志 |
+| **日志轮转 2MB** | watchdog 每轮检查 `.seeder-server.log` / 健康日志大小,超阈值转存 `.1`,防吃满磁盘 |
+| **node 路径探测** | 不再硬编码某个 nvm 版本;按序探测 v22.22.2 → 任意 nvm 版本 → homebrew |
+| **未挂载自愈** | watchdog 发现 `com.goutou.seeder` 没挂载会自动 `bootstrap` 回去 |
 
-### 历史事故根因（必读）
-某次 `npm run build`(发布用)把 `.next` 覆盖成 **Cloudflare 产物**(打进 d1 driver)。watchdog 用 `next start` + 运行时才 `export RUNTIME=node` —— **太晚**,d1 分支已进 bundle → 每个请求去连早已死掉的 workerd D1 代理(`ECONNREFUSED 127.0.0.1:<随机端口>` / `MessagePort worker(eval)`)→ 500 → 判死 → 每 60s 杀了重拉 → 拉起又崩,死循环。
-**教训**:改 Seeder 代码或发布后,务必 `npm run build:node` 重建 node 产物;watchdog 的 ensure_node_build 现在会自动纠正。
+### ⚠️ LaunchAgent 的固有边界
+`LaunchAgent` **只在用户登录后运行**。Mac 重启但停在登录界面 → Seeder 不会起。
+要真 24/7,需开「系统设置 → 用户与群组 → 自动登录」,或改用 `LaunchDaemon`(root,`/Library/LaunchDaemons`)。
+睡眠不影响:唤醒后进程仍在;若被系统回收,`KeepAlive` 会拉回。
 
 ### 管理命令
 ```bash
-# 状态
-launchctl list | grep seeder-watchdog
-# 停用 / 重载
-launchctl bootout   gui/$(id -u)/com.goutou.seeder-watchdog
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.goutou.seeder-watchdog.plist
-# 手动跑一次
-bash ~/Dev/jhfnetboy/goutou/scripts/seeder-daemon.sh
+# 状态(两个 job 都看)
+launchctl list | grep goutou
+launchctl print gui/$(id -u)/com.goutou.seeder | grep -E "state|pid|runs|last exit"
+
+# 服务本体:重启 / 停 / 起
+launchctl kickstart -k gui/$(id -u)/com.goutou.seeder
+launchctl bootout    gui/$(id -u)/com.goutou.seeder
+launchctl bootstrap  gui/$(id -u) ~/Library/LaunchAgents/com.goutou.seeder.plist
+
+# watchdog:同样三件套(把 com.goutou.seeder 换成 com.goutou.seeder-watchdog)
+launchctl kickstart gui/$(id -u)/com.goutou.seeder-watchdog   # 立刻跑一次健康检查
+
+# 看日志
+tail -f ~/Dev/jhfnetboy/goutou/.seeder-server.log            # 服务本体
+tail -f ~/Dev/jhfnetboy/goutou/.seeder-watchdog-health.log   # 健康事件(健康时为空)
+
 # 手动健康检查
 PAT=$(node -e "const c=require(process.env.HOME+'/.claude.json');process.stdout.write((c.mcpServers.seeder.headers.Authorization||'').replace(/^Bearer\s+/i,''))")
 curl -s -o /dev/null -w "HTTP %{http_code}\n" -X POST http://localhost:7399/api/mcp \
   -H "Authorization: Bearer $PAT" -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"check","version":"1"}}}'
+
+# 强制重建 node 产物(僵尸 500 时的手动版)
+rm -f ~/Dev/jhfnetboy/goutou/.next/.node-build-marker
+launchctl kickstart -k gui/$(id -u)/com.goutou.seeder
 ```
 
 ---

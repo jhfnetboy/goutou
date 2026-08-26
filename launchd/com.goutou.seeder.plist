@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.goutou.seeder</string>
+
+    <!-- 服务本体。seeder-run.sh 结尾 exec 进 next start，前台常驻，
+         launchd 直接监管这个进程本身 —— 不再有「spawn 完就退出、
+         触发进程组连坐 SIGKILL」的自杀路径。 -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/jason/Dev/jhfnetboy/goutou/scripts/seeder-run.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/jason/Dev/jhfnetboy/goutou</string>
+
+    <!-- 登录即起 -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- 核心：无论因何退出（崩溃、OOM、被杀、睡眠唤醒后断掉）launchd 都拉回来 -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- 两次启动最小间隔，防 boot-crash 刷爆（build 失败路径脚本内另有 120s 退避） -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/jason/Dev/jhfnetboy/goutou/.seeder-server.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jason/Dev/jhfnetboy/goutou/.seeder-server.log</string>
+
+    <!-- Standard 而非 Background：Background 会被 macOS 降 CPU/IO 优先级，
+         对一个要实时响应 MCP 请求的服务不合适 -->
+    <key>ProcessType</key>
+    <string>Standard</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/jason</string>
+        <key>LANG</key>
+        <string>en_US.UTF-8</string>
+    </dict>
+</dict>
+</plist>

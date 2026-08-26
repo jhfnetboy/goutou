@@ -74,4 +74,9 @@ DEPLOY-node.md
 .seeder-dev.log
 .seeder-watchdog.log
 .seeder-daemon.state
+.seeder-server.log
+.seeder-server.log.1
+.seeder-watchdog-health.log
+.seeder-watchdog-health.log.1
+.seeder-building
 .codex-reaper.log

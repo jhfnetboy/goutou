@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.goutou.seeder-watchdog</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/jason/Dev/jhfnetboy/goutou/scripts/seeder-daemon.sh</string>
+    </array>
+
+    <!-- 登录时立即跑一次（若 Seeder 没起就拉起） -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- 每 60 秒健康检查一次：死了/僵尸 500 都会被重新拉起 -->
+    <key>StartInterval</key>
+    <integer>60</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/jason/Dev/jhfnetboy/goutou/.seeder-watchdog.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jason/Dev/jhfnetboy/goutou/.seeder-watchdog.log</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
