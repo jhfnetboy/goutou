@@ -5,17 +5,24 @@
     <key>Label</key>
     <string>com.goutou.seeder-watchdog</string>
 
+    <!-- 健康检查器。只探 HTTP，判死就 kill 服务进程让 KeepAlive 拉回；
+         不 spawn 进程、不需要 root。同样以 jason 身份跑。 -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
         <string>/Users/jason/Dev/jhfnetboy/goutou/scripts/seeder-daemon.sh</string>
     </array>
 
-    <!-- 登录时立即跑一次（若 Seeder 没起就拉起） -->
+    <key>UserName</key>
+    <string>jason</string>
+    <key>GroupName</key>
+    <string>staff</string>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/jason/Dev/jhfnetboy/goutou</string>
+
     <key>RunAtLoad</key>
     <true/>
-
-    <!-- 每 60 秒健康检查一次：死了/僵尸 500 都会被重新拉起 -->
     <key>StartInterval</key>
     <integer>60</integer>
 
@@ -26,5 +33,13 @@
 
     <key>ProcessType</key>
     <string>Background</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/jason</string>
+        <key>LANG</key>
+        <string>en_US.UTF-8</string>
+    </dict>
 </dict>
 </plist>

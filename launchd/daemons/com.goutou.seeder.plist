@@ -5,23 +5,30 @@
     <key>Label</key>
     <string>com.goutou.seeder</string>
 
-    <!-- 服务本体。seeder-run.sh 结尾 exec 进 next start，前台常驻，
-         launchd 直接监管这个进程本身 —— 不再有「spawn 完就退出、
-         触发进程组连坐 SIGKILL」的自杀路径。 -->
+    <!-- LaunchDaemon：开机(解密后)即起，不依赖任何用户登录。
+         装到 /Library/LaunchDaemons/，属主 root:wheel 权限 644。 -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
         <string>/Users/jason/Dev/jhfnetboy/goutou/scripts/seeder-run.sh</string>
     </array>
 
+    <!-- ⚠️ 关键：以 jason 身份运行，而不是默认的 root。
+         root 跑 next build 会造出 root 属主的 .next/ 和 sqlite WAL 文件，
+         之后用户自己 npm run dev 会 EACCES —— 得 sudo 才能收拾。
+         daemon 的价值是「开机即起」，不是「用 root 跑」，两者可以分开。 -->
+    <key>UserName</key>
+    <string>jason</string>
+    <key>GroupName</key>
+    <string>staff</string>
+
     <key>WorkingDirectory</key>
     <string>/Users/jason/Dev/jhfnetboy/goutou</string>
 
-    <!-- 登录即起 -->
     <key>RunAtLoad</key>
     <true/>
 
-    <!-- 核心：无论因何退出（崩溃、OOM、被杀、睡眠唤醒后断掉）launchd 都拉回来 -->
+    <!-- 无论因何退出都拉回来 -->
     <key>KeepAlive</key>
     <true/>
 
@@ -34,11 +41,11 @@
     <key>StandardErrorPath</key>
     <string>/Users/jason/Dev/jhfnetboy/goutou/.seeder-server.log</string>
 
-    <!-- Standard 而非 Background：Background 会被 macOS 降 CPU/IO 优先级，
-         对一个要实时响应 MCP 请求的服务不合适 -->
+    <!-- Standard 而非 Background：Background 会被 macOS 降 CPU/IO 优先级 -->
     <key>ProcessType</key>
     <string>Standard</string>
 
+    <!-- daemon 环境比 agent 更空，HOME 必须显式给（脚本用 $HOME 定位仓库和 ~/.claude.json） -->
     <key>EnvironmentVariables</key>
     <dict>
         <key>HOME</key>

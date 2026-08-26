@@ -1,22 +1,23 @@
 # Goutou 运维手册（OPS）
 
-commander 机器上跑着三个 launchd 任务:**Seeder 服务本体**(`com.goutou.seeder`,KeepAlive 常驻)、**Seeder 健康 watchdog**(`com.goutou.seeder-watchdog`,每 60s 探活)和 **Codex reaper**(清 codex 泄漏)。本文是它们的故障排查 + 复现指南。
+commander 机器上跑着三个 launchd 任务:**Seeder 服务本体**(`com.goutou.seeder`,LaunchDaemon + KeepAlive 常驻)、**Seeder 健康 watchdog**(`com.goutou.seeder-watchdog`,LaunchDaemon,每 60s 探活)和 **Codex reaper**(`com.goutou.codex-reaper`,LaunchAgent,清 codex 泄漏)。本文是它们的故障排查 + 复现指南。
 
 ---
 
-## 1. Seeder 保活（launchd 直接监管 + 健康 watchdog）
+## 1. Seeder 保活（LaunchDaemon 直接监管 + 健康 watchdog）
 
 Seeder(端口 **7399**)以 `RUNTIME=node` + libsql 常驻。**两个 launchd 任务分工**:
 
 | 任务 | 角色 | 触发 |
 |---|---|---|
 | `com.goutou.seeder` | **服务本体**。`scripts/seeder-run.sh` 结尾 `exec` 进 `next start`,前台常驻,launchd 用 `KeepAlive` 直接监管 —— 进程一死秒级拉回 | `RunAtLoad` + `KeepAlive` |
-| `com.goutou.seeder-watchdog` | **健康检查器**。只探 HTTP、**绝不自己 spawn 进程**;判死后 `launchctl kickstart -k` 把重启动作交回 launchd | `StartInterval=60` |
+| `com.goutou.seeder-watchdog` | **健康检查器**。只探 HTTP、**绝不自己 spawn 进程、不持有 root**;判死后 `kill -9` 服务进程,由 KeepAlive 拉回 | `StartInterval=60` |
 
 - 脚本:`scripts/seeder-run.sh`(启动器) / `scripts/seeder-daemon.sh`(健康检查)
-- launchd:`~/Library/LaunchAgents/com.goutou.seeder.plist` / `com.goutou.seeder-watchdog.plist`
+- launchd:`/Library/LaunchDaemons/com.goutou.seeder.plist` / `com.goutou.seeder-watchdog.plist`(**system 域**,开机即起,不依赖登录)
 - 状态:`.seeder-daemon.state`(存 `last_restart`/`fails`)、`.next/.node-build-marker`(node 产物指纹)、`.seeder-building`(构建中标记) —— 均 gitignored
-- launchd plist 副本随仓库分发:`launchd/`(换机器时改里面的绝对路径再 `cp` 到 `~/Library/LaunchAgents/`)
+- plist 源文件随仓库分发:`launchd/daemons/`(daemon) 与 `launchd/`(codex-reaper agent);换机器时改里面的绝对路径和 `UserName` 再跑安装脚本
+- 安装/迁移:`sudo bash scripts/install-daemons.sh`(幂等,可重复执行)
 - 日志:`.seeder-server.log`(服务本体) / `.seeder-watchdog-health.log`(健康事件,健康时为空)
 
 ### 健康判据
@@ -55,26 +56,68 @@ watchdog 探到 **5xx** 时主动删掉 marker 再 kickstart,强制重建。改 
 | **失败退避** | 连续 `MAXFAILS=4` 次 kickstart 仍不健康 → 改成每 `BACKOFF=600s` 才试一次并大声记日志 |
 | **日志轮转 2MB** | watchdog 每轮检查 `.seeder-server.log` / 健康日志大小,超阈值转存 `.1`,防吃满磁盘 |
 | **node 路径探测** | 不再硬编码某个 nvm 版本;按序探测 v22.22.2 → 任意 nvm 版本 → homebrew |
-| **未挂载自愈** | watchdog 发现 `com.goutou.seeder` 没挂载会自动 `bootstrap` 回去 |
+| **未挂载则报警** | watchdog 发现 `system/com.goutou.seeder` 没挂载会写错误日志并 `exit 1`(挂载 system 域要 root,脚本刻意不持有特权,所以只报不修) |
+| **日志轮转用 truncate 而非 mv** | launchd 对 `StandardOutPath` 持有常开 fd。`mv` 之后那个 fd 仍指向被改名的旧 inode,服务会继续往 `.1` 里写、新文件永远是空的 —— 看上去「日志停了」。必须 `cp` + 原地 `: >` 清空,保留 inode 与属主 |
 
-### ⚠️ LaunchAgent 的固有边界
-`LaunchAgent` **只在用户登录后运行**。Mac 重启但停在登录界面 → Seeder 不会起。
-要真 24/7,需开「系统设置 → 用户与群组 → 自动登录」,或改用 `LaunchDaemon`(root,`/Library/LaunchDaemons`)。
+### 为什么是 LaunchDaemon，以及为什么它仍以 jason 身份跑
+
+`LaunchAgent` **只在用户登录后运行** —— 注销即随会话一起死。改用 `LaunchDaemon`(`/Library/LaunchDaemons`,
+属主必须 `root:wheel` 权限 `644`)后,**开机(解密后)即起,不依赖任何登录**。
+
+但 daemon 默认以 **root** 运行,这里刻意用 `UserName=jason` 降权:
+root 跑 `next build` 会造出 root 属主的 `.next/` 和 sqlite WAL 文件,之后用户自己 `npm run dev`
+直接 `EACCES`,得 sudo 才能收拾。**daemon 的价值是「开机即起」,不是「用 root 跑」,两者可以分开。**
+
+降权带来一个连锁改动:操作 system 域(`launchctl kickstart system/...`)需要 root,普通用户做不到。
+所以 watchdog 判死后改成**直接 `kill -9` 服务进程** —— 进程同属 jason,杀得动,
+launchd 的 `KeepAlive` 会在 `ThrottleInterval` 内把它拉回来。等价效果,零特权。
+
+### ⚠️ FileVault：daemon 也治不了的最后一段
+
+本机 `fdesetup status` = **On**。开机时整盘加密,macOS 停在 FileVault 解锁界面;
+**在有人物理输入密码解锁之前,磁盘没解密,`/Library/LaunchDaemons` 根本读不到,任何 daemon 都不会跑。**
+
+| 场景 | LaunchAgent | LaunchDaemon |
+|---|---|---|
+| 服务进程崩溃 | ✅ | ✅ |
+| 注销登录、机器不关机 | ❌ 随会话死 | ✅ 继续跑 |
+| 睡眠 / 唤醒 | ✅ | ✅ |
+| 计划内重启 | ❌ 要等登录 | ⚠️ 要等 FileVault 解锁 |
+| 断电 / 内核崩溃后自动重启 | ❌ | ⚠️ **仍要等人解锁** |
+
+**计划内重启的解法**——`fdesetup authrestart` 把解锁密钥在内存里存一次,
+重启时自动穿过 FileVault 界面直达系统,daemon 随即自启:
+
+```bash
+sudo fdesetup authrestart          # 输入密码后立即重启,无需在开机界面再解一次
+sudo fdesetup authrestart -delayminutes 0   # 同上,显式立刻
+```
+
+意外断电/panic 不在此列 —— 那种情况仍需回到机器前解锁一次。
+要覆盖到那一步只能关掉 FileVault(全盘明文,笔记本丢失即数据裸奔,
+本机 `~/.claude.json` 里有 Seeder PAT,**不建议**)。
+
 睡眠不影响:唤醒后进程仍在;若被系统回收,`KeepAlive` 会拉回。
 
 ### 管理命令
 ```bash
-# 状态(两个 job 都看)
-launchctl list | grep goutou
-launchctl print gui/$(id -u)/com.goutou.seeder | grep -E "state|pid|runs|last exit"
+# 安装 / 迁移 / 重装(幂等)
+sudo bash ~/Dev/jhfnetboy/goutou/scripts/install-daemons.sh
 
-# 服务本体:重启 / 停 / 起
-launchctl kickstart -k gui/$(id -u)/com.goutou.seeder
-launchctl bootout    gui/$(id -u)/com.goutou.seeder
-launchctl bootstrap  gui/$(id -u) ~/Library/LaunchAgents/com.goutou.seeder.plist
+# 状态(三个 job 都看)
+launchctl list | grep goutou
+sudo launchctl print system/com.goutou.seeder | grep -E "state|pid|runs|last exit"
+
+# 服务本体:重启 / 停 / 起(system 域一律要 sudo)
+sudo launchctl kickstart -k system/com.goutou.seeder
+sudo launchctl bootout    system/com.goutou.seeder
+sudo launchctl bootstrap  system /Library/LaunchDaemons/com.goutou.seeder.plist
+
+# 不想用 sudo 重启服务?直接杀,KeepAlive 会拉回(watchdog 内部就是这么做的)
+kill -9 $(lsof -tiTCP:7399 -sTCP:LISTEN)
 
 # watchdog:同样三件套(把 com.goutou.seeder 换成 com.goutou.seeder-watchdog)
-launchctl kickstart gui/$(id -u)/com.goutou.seeder-watchdog   # 立刻跑一次健康检查
+sudo launchctl kickstart system/com.goutou.seeder-watchdog   # 立刻跑一次健康检查
 
 # 看日志
 tail -f ~/Dev/jhfnetboy/goutou/.seeder-server.log            # 服务本体
@@ -89,7 +132,7 @@ curl -s -o /dev/null -w "HTTP %{http_code}\n" -X POST http://localhost:7399/api/
 
 # 强制重建 node 产物(僵尸 500 时的手动版)
 rm -f ~/Dev/jhfnetboy/goutou/.next/.node-build-marker
-launchctl kickstart -k gui/$(id -u)/com.goutou.seeder
+kill -9 $(lsof -tiTCP:7399 -sTCP:LISTEN)   # KeepAlive 拉回时会自动 build:node
 ```
 
 ---
