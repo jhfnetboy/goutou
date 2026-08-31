@@ -33,7 +33,21 @@ STATE="$REPO/.seeder-daemon.state"
 BUILDING="$REPO/.seeder-building"   # 由 seeder-run.sh 维护的「构建中」标记
 HEALTH_URL="http://localhost:$PORT/api/mcp"
 SVC="com.goutou.seeder"
-SVC_TARGET="system/$SVC"   # LaunchDaemon：开机即起，不依赖登录
+# 服务 job 可能挂在两个域：
+#   system/…      LaunchDaemon（开机即起，推荐形态）
+#   gui/<uid>/…   LaunchAgent（迁移前的旧形态，登录后才跑）
+# 两种都要支持 —— 否则迁移窗口期内 watchdog 会一直判「未挂载」而空转。
+# （实际教训：2026-08-26 改成只认 system 域后，因安装脚本尚未执行，
+#   watchdog 连续 5 天每 60s 报错退出，僵尸检测层静默下线。）
+# 重启走 kill + KeepAlive，与域无关，所以域只用于「是否挂载」判断和取 pid。
+SVC_TARGET=""
+resolve_target() {
+  local t
+  for t in "system/$SVC" "gui/$(id -u)/$SVC"; do
+    if launchctl print "$t" >/dev/null 2>&1; then SVC_TARGET="$t"; return 0; fi
+  done
+  return 1
+}
 
 GRACE=90         # 秒：重启后不判死的宽限期（构建期另由 BUILDING 标记避让）
 BUILD_GRACE=420  # 秒：若检测到正在跑 build:node，放宽到 7 分钟
@@ -143,10 +157,16 @@ rotate
 load_state
 
 # 服务 job 没挂载 ⇒ 只能报警。挂载 system 域要 root，本脚本刻意不持有特权。
-# 正常情况下 LaunchDaemon 开机即挂载、不会自行卸载，走到这里说明有人手工 bootout 了。
-if ! launchctl print "$SVC_TARGET" >/dev/null 2>&1; then
-  log "❌ $SVC 未挂载！请执行：sudo launchctl bootstrap system /Library/LaunchDaemons/$SVC.plist"
+# 正常情况下 LaunchDaemon 开机即挂载、不会自行卸载，走到这里说明压根没装或被手工 bootout。
+if ! resolve_target; then
+  log "❌ $SVC 在 system 域和用户域都未挂载！请执行：sudo bash $REPO/scripts/install-daemons.sh"
   exit 1
+fi
+# 仍是旧的 LaunchAgent 形态 ⇒ 能正常工作，但只在登录后才跑，提醒迁移（每 30 分钟提一次，不刷屏）
+if [ "${SVC_TARGET#gui/}" != "$SVC_TARGET" ]; then
+  if [ $(( $(now) % 1800 )) -lt 60 ]; then
+    log "ℹ️ $SVC 仍是 LaunchAgent（登录后才跑）。迁移到开机即起：sudo bash $REPO/scripts/install-daemons.sh"
+  fi
 fi
 
 code=$(health_code)

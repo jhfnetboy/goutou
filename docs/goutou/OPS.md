@@ -56,7 +56,8 @@ watchdog 探到 **5xx** 时主动删掉 marker 再 kickstart,强制重建。改 
 | **失败退避** | 连续 `MAXFAILS=4` 次 kickstart 仍不健康 → 改成每 `BACKOFF=600s` 才试一次并大声记日志 |
 | **日志轮转 2MB** | watchdog 每轮检查 `.seeder-server.log` / 健康日志大小,超阈值转存 `.1`,防吃满磁盘 |
 | **node 路径探测** | 不再硬编码某个 nvm 版本;按序探测 v22.22.2 → 任意 nvm 版本 → homebrew |
-| **未挂载则报警** | watchdog 发现 `system/com.goutou.seeder` 没挂载会写错误日志并 `exit 1`(挂载 system 域要 root,脚本刻意不持有特权,所以只报不修) |
+| **双域探测** | watchdog 依次探 `system/…`(daemon) 和 `gui/<uid>/…`(agent),两种形态都能正常工作 —— 迁移窗口期不会空转。仍是 agent 形态时每 30 分钟提醒一次迁移。**教训**:2026-08-26 改成只认 system 域,而安装脚本尚未执行,watchdog 连续 5 天每 60s 报错退出,僵尸检测层静默下线 |
+| **都未挂载则报警** | 两个域都找不到才写错误日志并 `exit 1`(挂载 system 域要 root,脚本刻意不持有特权,所以只报不修) |
 | **日志轮转用 truncate 而非 mv** | launchd 对 `StandardOutPath` 持有常开 fd。`mv` 之后那个 fd 仍指向被改名的旧 inode,服务会继续往 `.1` 里写、新文件永远是空的 —— 看上去「日志停了」。必须 `cp` + 原地 `: >` 清空,保留 inode 与属主 |
 
 ### 为什么是 LaunchDaemon，以及为什么它仍以 jason 身份跑
