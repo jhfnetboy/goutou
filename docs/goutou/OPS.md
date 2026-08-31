@@ -100,6 +100,30 @@ sudo fdesetup authrestart -delayminutes 0   # 同上,显式立刻
 
 睡眠不影响:唤醒后进程仍在;若被系统回收,`KeepAlive` 会拉回。
 
+### 历史事故根因 C：安装脚本中途炸掉，把服务留在无人监管状态（2026-08-31）
+
+**症状**:`sudo bash scripts/install-daemons.sh` 跑到 3/5 步报
+`DST\ufffd: unbound variable` 退出。此时 1/5 步**已经**卸载了两个 LaunchAgent 并把 plist 改名,
+于是 Seeder 直接下线,且没有任何 launchd 任务会拉起它。
+
+**根因一(直接)**:`echo "…安装 plist 到 $DST（root:wheel…）"`。
+bash 判定变量名用 **locale 相关的 `isalnum()`**,UTF-8 下全角括号「（」(U+FF08) 的首字节
+被当成名字的一部分 —— 它去找一个叫 `DST\xef…` 的变量,`set -u` 直接中止。
+**规则:中文日志里的变量一律写 `${VAR}`,不要裸 `$VAR`。**
+同样的坑在 `seeder-daemon.sh` 的 `restart_service()` 里还有一处
+(`log "kill -9 $pids（…）"`),位置在 `kill` **之前** —— 一旦真出现僵尸态,
+脚本会在那行中止,kill 永远执行不到,**僵尸恢复整条路径是死的**。已一并修掉。
+
+**根因二(更要命)**:**顺序错了**。旧版先做破坏性操作(卸 agent)、再做可能失败的操作(装 daemon),
+中间任何一步失败都会留下「旧的已拆、新的没装」的空窗。
+
+**现在的写法**:先做完所有非破坏性准备(预检 plist 合法性 + `bash -n` 脚本语法 + 建日志文件 +
+装 plist 到 `/Library/LaunchDaemons`)→ 才动 agent → `bootstrap` → **验证端口 180s 内真的起来** →
+任何一步失败都 `trap rollback ERR` 回滚到 LaunchAgent。宁可回到旧形态,也不能让服务无人监管。
+
+> 另一个当场发现的坑:`echo "…用 \`sudo fdesetup authrestart\` 可…"` —— 双引号里的反引号是**命令替换**,
+> 脚本跑到那行会真的去执行它(那条命令会重启整台机器)。提示文案一律用单引号。
+
 ### 管理命令
 ```bash
 # 安装 / 迁移 / 重装(幂等)

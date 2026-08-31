@@ -15,6 +15,12 @@
 #
 # 健康判据：带【真 PAT】打 /api/mcp initialize —— 200 才算 D1/libsql 真活着。
 #   - 200 = 健康   - 401 = 无 PAT 时的降级判据   - 5xx = 僵尸   - 000 = 没监听
+#
+# ⚠️ 中文日志里的变量一律写 ${VAR} 而不是 $VAR。
+#   bash 判定变量名用 locale 相关的 isalnum()，UTF-8 下全角标点（如「（」U+FF08）
+#   的首字节会被当成名字的一部分 —— `$DST（…` 会去找一个并不存在的变量 `DST\xef…`，
+#   在 set -u 下直接中止脚本。2026-08-31 安装脚本就是这样在中途炸掉，
+#   而此时旧 LaunchAgent 已被卸载，Seeder 处于无人监管状态。
 set -u
 
 # launchd 环境 PATH 极简，显式补齐 node(nvm)/pnpm/系统工具
@@ -145,7 +151,7 @@ restart_service() {
     pids=$(launchctl print "$SVC_TARGET" 2>/dev/null | awk '/^\s*pid = /{print $3; exit}')
   fi
   if [ -n "$pids" ]; then
-    log "kill -9 $pids（由 KeepAlive 自动拉回）"
+    log "kill -9 ${pids}（由 KeepAlive 自动拉回）"
     kill -9 $pids 2>/dev/null
   else
     log "找不到可杀的进程 —— 服务应已不在，等 KeepAlive 拉起"
