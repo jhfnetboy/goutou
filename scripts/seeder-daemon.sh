@@ -37,6 +37,7 @@ PORT=7399
 LOG="$REPO/.seeder-watchdog-health.log"
 STATE="$REPO/.seeder-daemon.state"
 BUILDING="$REPO/.seeder-building"   # 由 seeder-run.sh 维护的「构建中」标记
+HEARTBEAT="$REPO/.seeder-watchdog-heartbeat"   # 每轮都写，用来证明 watchdog 自己还活着
 HEALTH_URL="http://localhost:$PORT/api/mcp"
 SVC="com.goutou.seeder"
 # 服务 job 可能挂在两个域：
@@ -159,6 +160,13 @@ restart_service() {
 }
 
 # ================= 主流程 =================
+# 心跳：健康时本脚本全程静默，没有任何输出 —— 于是「watchdog 自己死了」这件事
+# 无法被观测到。2026-08-26~31 它因指向了不存在的 job 每 60s 报错退出，
+# 静默失效整整 5 天，期间僵尸检测层是空的，而表面一切正常。
+# 每轮无条件写一行时间戳，任何人都能一眼看出它上次是什么时候跑的：
+#   cat .seeder-watchdog-heartbeat
+date '+%F %T' > "$HEARTBEAT" 2>/dev/null || true
+
 rotate
 load_state
 

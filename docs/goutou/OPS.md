@@ -19,6 +19,9 @@ Seeder(端口 **7399**)以 `RUNTIME=node` + libsql 常驻。**两个 launchd 任
 - plist 源文件随仓库分发:`launchd/daemons/`(daemon) 与 `launchd/`(codex-reaper agent);换机器时改里面的绝对路径和 `UserName` 再跑安装脚本
 - 安装/迁移:`sudo bash scripts/install-daemons.sh`(幂等,可重复执行)
 - 日志:`.seeder-server.log`(服务本体) / `.seeder-watchdog-health.log`(健康事件,健康时为空)
+- **心跳**:`.seeder-watchdog-heartbeat` —— watchdog 每轮无条件写入时间戳。
+  健康时它全程静默,这个文件是**唯一能证明它自己还活着**的信号:`cat .seeder-watchdog-heartbeat`,
+  时间戳应在 60s 以内。超过说明 watchdog 挂了(僵尸检测层已下线,但服务本体仍由 KeepAlive 撑着,表面无感)
 
 ### 健康判据
 带**真 PAT** 打 `/api/mcp` initialize —— **只有 200** 才算 DB 真活着(解析 PAT 要查库)。
@@ -58,6 +61,7 @@ watchdog 探到 **5xx** 时主动删掉 marker 再 kickstart,强制重建。改 
 | **node 路径探测** | 不再硬编码某个 nvm 版本;按序探测 v22.22.2 → 任意 nvm 版本 → homebrew |
 | **双域探测** | watchdog 依次探 `system/…`(daemon) 和 `gui/<uid>/…`(agent),两种形态都能正常工作 —— 迁移窗口期不会空转。仍是 agent 形态时每 30 分钟提醒一次迁移。**教训**:2026-08-26 改成只认 system 域,而安装脚本尚未执行,watchdog 连续 5 天每 60s 报错退出,僵尸检测层静默下线 |
 | **都未挂载则报警** | 两个域都找不到才写错误日志并 `exit 1`(挂载 system 域要 root,脚本刻意不持有特权,所以只报不修) |
+| **心跳文件** | watchdog 每轮写 `.seeder-watchdog-heartbeat`。健康时它完全静默,没有心跳就无法区分「一切正常」和「它已经死了」—— 后者实际发生过 5 天 |
 | **日志轮转用 truncate 而非 mv** | launchd 对 `StandardOutPath` 持有常开 fd。`mv` 之后那个 fd 仍指向被改名的旧 inode,服务会继续往 `.1` 里写、新文件永远是空的 —— 看上去「日志停了」。必须 `cp` + 原地 `: >` 清空,保留 inode 与属主 |
 
 ### 为什么是 LaunchDaemon，以及为什么它仍以 jason 身份跑
@@ -129,8 +133,14 @@ bash 判定变量名用 **locale 相关的 `isalnum()`**,UTF-8 下全角括号�
 # 安装 / 迁移 / 重装(幂等)
 sudo bash ~/Dev/jhfnetboy/goutou/scripts/install-daemons.sh
 
-# 状态(三个 job 都看)
-launchctl list | grep goutou
+# 状态。⚠️ 普通用户的 `launchctl list` 只看得到用户域 —— 两个 daemon 在 system 域，
+# 不加 sudo 是看不见的(会误以为没装)。日常巡检用下面三条免 sudo 的即可:
+cat ~/Dev/jhfnetboy/goutou/.seeder-watchdog-heartbeat   # watchdog 活着吗(应 <60s)
+lsof -iTCP:7399 -sTCP:LISTEN                            # 服务在监听吗
+ps -o user,command -p $(lsof -tiTCP:7399 -sTCP:LISTEN)  # 是否以 jason 身份跑(不该是 root)
+
+# 要看 launchd 内部状态才需要 sudo
+sudo launchctl list | grep goutou
 sudo launchctl print system/com.goutou.seeder | grep -E "state|pid|runs|last exit"
 
 # 服务本体:重启 / 停 / 起(system 域一律要 sudo)

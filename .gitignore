@@ -79,4 +79,5 @@ DEPLOY-node.md
 .seeder-watchdog-health.log
 .seeder-watchdog-health.log.1
 .seeder-building
+.seeder-watchdog-heartbeat
 .codex-reaper.log
