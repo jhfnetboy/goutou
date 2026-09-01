@@ -1,14 +1,20 @@
 #!/bin/bash
 # Codex 泄漏 reaper。由 launchd 每 30 分钟调用一次，也可手动跑。
 #
-# 背景：Codex 审查(Tier1 review)每次调用 spawn 一个 `codex app-server` + 若干
-# `mcp/server.cjs --stdio` 桥接子进程，从不回收。一两周攒到数百个、几个 G 内存，
-# 全部 0% CPU 闲置，还会挤爆内存间接害 Seeder。seeder-daemon 不管这个，单列此 reaper。
+# 背景：Codex 审查(Tier1 review)每次调用 spawn 一条泄漏链：
+#   app-server-broker.mjs (node broker) → codex app-server (native) → mcp/server.cjs --stdio (桥接)
+# 后两层从不回收，一两周攒到数百个、几个 G 内存，全部 0% CPU 闲置，还会挤爆内存间接害 Seeder。
+# 本 reaper 收其中两层：
+#   - codex app-server：按「老 + 几乎没跑过活」判据（仅限插件/CLI spawn 的，见下）。
+#   - mcp/server.cjs 桥接：按 ppid=1 孤儿判据（父 app-server 死了才会变孤儿）。
 #
-# 安全判据（宁可漏杀，不可错杀正在跑的审查）：
-#   只杀「存活 > MIN_AGE 秒」且「累计 CPU 时间 < MAX_CPU 秒」的 app-server —— 即活了很久
-#   却几乎没干过活 = 泄漏的僵进程。刚 spawn 的（活审查）年龄不够，不杀；跑过活的 CPU
-#   够高，不杀。app-server 杀掉后，其 mcp/server.cjs 桥接子进程会变孤儿(ppid=1)，再清孤儿。
+# ⚠️ 不碰 broker 层：broker 由插件以 detached(unref) 方式 spawn，ppid=1 是它的**设计稳态**
+#   而非孤儿信号；且插件按 **cwd** 复用存活 broker（探 unix socket，不看 ppid）。用 ppid 判据
+#   会 kill 掉正在被复用的活 broker。要安全回收 broker 必须探它的 socket 存活性 + 走插件自己的
+#   优雅关闭，属未来工作，本脚本一律不动 broker。
+#
+# ⚠️ 只杀「插件/CLI spawn 的」codex app-server，**排除 /Applications/Codex.app/ 桌面版后台**——
+#   桌面版后台常年存活、低 CPU，会误命中 age+cpu 判据被 SIGKILL，破坏用户的 Codex 桌面 App。
 #
 # 注意：macOS ps 用 etime（格式 [[dd-]hh:]mm:ss），无 Linux 的 etimes(秒)。用 awk 解析。
 set -u
@@ -23,9 +29,9 @@ MAX_CPU=60       # 秒：累计 CPU 时间低于 60s = 基本没干活 = 僵
 ts() { date '+%F %T'; }
 log() { echo "[$(ts)] $*" >> "$LOG"; }
 
-# 选出「老 + 几乎没跑过活」的 codex app-server pid
+# 选出「老 + 几乎没跑过活」的插件/CLI codex app-server pid（排除 Codex.app 桌面版）
 pids=$(ps -axo etime=,cputime=,pid=,command= | awk -v minage="$MIN_AGE" -v maxcpu="$MAX_CPU" '
-  /codex app-server/ {
+  /codex app-server/ && $0 !~ /Applications\/Codex\.app/ {
     etime=$1; cputime=$2; pid=$3
     # etime → 秒：[[dd-]hh:]mm:ss
     d=0; rest=etime
@@ -46,7 +52,7 @@ done
 
 sleep 2
 
-# 清理因父进程被杀而变孤儿(ppid=1)的桥接进程；仍挂在活 codex 下的不动
+# 清理因父进程(app-server)被杀而变孤儿(ppid=1)的桥接进程；仍挂在活 app-server 下的不动
 killed_bridge=0
 for pid in $(pgrep -f "mcp/server.cjs --stdio"); do
   ppid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
